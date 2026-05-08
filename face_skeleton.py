@@ -109,7 +109,7 @@ def download_model():
         print("[SETUP] Done.")
 
 def to_pixels(landmarks, w, h):
-    return [(int(lm.x * w), int(lm.y * h), lm.z) for lm in landmarks]
+    return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
 
 def z_range(pts):
     zs = [z for _, _, z in pts]
