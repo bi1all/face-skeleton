@@ -102,6 +102,29 @@ C_IRIS = (255, 255, 255)
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
+class SmoothedLandmark:
+    __slots__ = ['x', 'y', 'z']
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+class LandmarkSmoother:
+    def __init__(self, alpha=0.5):
+        self.alpha = alpha
+        self.smoothed = None
+
+    def update(self, landmarks):
+        if self.smoothed is None or len(self.smoothed) != len(landmarks):
+            self.smoothed = [[lm.x, lm.y, lm.z] for lm in landmarks]
+        else:
+            for i, lm in enumerate(landmarks):
+                self.smoothed[i][0] = self.alpha * lm.x + (1 - self.alpha) * self.smoothed[i][0]
+                self.smoothed[i][1] = self.alpha * lm.y + (1 - self.alpha) * self.smoothed[i][1]
+                self.smoothed[i][2] = self.alpha * lm.z + (1 - self.alpha) * self.smoothed[i][2]
+
+        return [SmoothedLandmark(s[0], s[1], s[2]) for s in self.smoothed]
+
 def download_model():
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
@@ -158,29 +181,38 @@ def main():
 
     last_result = None
     t_prev      = time.perf_counter()
+    smoother    = LandmarkSmoother(alpha=0.5)
+    paused      = False
 
     with FaceLandmarker.create_from_options(options) as landmarker:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue
+            if not paused:
+                ret, frame = cap.read()
+                if not ret:
+                    continue
 
-            timestamp_ms = int(time.time() * 1000)
+                timestamp_ms = int(time.time() * 1000)
 
-            # ── PRIVACY BARRIER ──────────────────────────────────────────────
-            rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            del frame, rgb
-            result      = landmarker.detect_for_video(mp_image, timestamp_ms)
-            last_result = result
-            del mp_image
-            # ─────────────────────────────────────────────────────────────────
+                # ── PRIVACY BARRIER ──────────────────────────────────────────────
+                rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                del frame, rgb
+                result      = landmarker.detect_for_video(mp_image, timestamp_ms)
+                last_result = result
+                del mp_image
+                # ─────────────────────────────────────────────────────────────────
+            else:
+                # If paused, we keep using the `last_result`
+                result = last_result
+                # We need to simulate time passing for fps calculation, though fps might not make as much sense when paused
+                time.sleep(0.01)
 
             canvas = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
             if result.face_landmarks:
                 for face in result.face_landmarks:
-                    pts    = to_pixels(face, CANVAS_W, CANVAS_H)
+                    smoothed_face = smoother.update(face)
+                    pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
                     zm, zx = z_range(pts)
 
                     draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
@@ -192,6 +224,8 @@ def main():
                     draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
                     draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
                     draw_dots(canvas, pts, zm, zx)
+            else:
+                smoother.smoothed = None
 
             now    = time.perf_counter()
             fps    = 1.0 / (now - t_prev + 1e-9)
@@ -204,11 +238,13 @@ def main():
 
             if key == 27:
                 break
-            if key == ord('s') and last_result and last_result.face_landmarks:
+            if key == ord(' '):
+                paused = not paused
+            if key == ord('s') and smoother.smoothed is not None:
                 with open("face_landmarks.txt", "w") as f:
                     f.write("id,x,y,z\n")
-                    for i, lm in enumerate(last_result.face_landmarks[0]):
-                        f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
+                    for i, (x, y, z) in enumerate(smoother.smoothed):
+                        f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
                 print("[SAVED] face_landmarks.txt")
 
     cap.release()
