@@ -138,9 +138,17 @@ def z_range(pts):
     zs = [z for _, _, z in pts]
     return min(zs), max(zs)
 
-def draw_connections(canvas, pts, connections, color, thickness=1):
+def draw_connections(canvas, pts, connections, base_color, z_min, z_max, thickness=1):
+    span = z_max - z_min + 1e-9
     for a, b in connections:
         if a < len(pts) and b < len(pts):
+            # Calculate depth for the segment to adjust color brightness
+            avg_z = (pts[a][2] + pts[b][2]) / 2.0
+            t = (avg_z - z_min) / span
+            # Brighter closer to camera, darker further away
+            factor = max(0.2, 1.0 - t)
+            color = (int(base_color[0] * factor), int(base_color[1] * factor), int(base_color[2] * factor))
+
             cv2.line(canvas,
                      (pts[a][0], pts[a][1]),
                      (pts[b][0], pts[b][1]),
@@ -149,11 +157,47 @@ def draw_connections(canvas, pts, connections, color, thickness=1):
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
     for x, y, z in pts:
-        t          = (z - z_min) / span
-        brightness = int(255 * (1.0 - t * 0.75))
-        radius     = max(1, int(3 * (1.0 - t)))
-        cv2.circle(canvas, (x, y), radius,
-                   (brightness, brightness, brightness), -1, cv2.LINE_AA)
+        t = (z - z_min) / span
+        # Colormap from Deep Blue (far) to Bright Cyan (near) to simulate depth scan
+        r = int(0)
+        g = int(255 * (1.0 - t))
+        b = int(255 * (0.5 + 0.5 * (1.0 - t)))
+
+        radius = max(1, int(3 * (1.0 - t)))
+        cv2.circle(canvas, (x, y), radius, (b, g, r), -1, cv2.LINE_AA)
+
+def draw_blendshapes(canvas, blendshapes, x_offset=10, y_offset=60):
+    # Select some interesting micro-expressions to display
+    targets = ['jawOpen', 'eyeBlinkLeft', 'eyeBlinkRight', 'mouthSmileLeft', 'mouthSmileRight', 'browInnerUp', 'mouthPucker']
+
+    cv2.putText(canvas, "Live Expressions:", (x_offset, y_offset - 15),
+                cv2.FONT_HERSHEY_PLAIN, 1.2, (200, 200, 200), 1, cv2.LINE_AA)
+
+    if not blendshapes:
+        return
+
+    y_pos = y_offset
+    for cat in blendshapes[0].categories:
+        if cat.category_name in targets:
+            name = cat.category_name
+            score = cat.score
+
+            # Draw label
+            cv2.putText(canvas, name, (x_offset, y_pos + 12),
+                        cv2.FONT_HERSHEY_PLAIN, 0.9, (150, 150, 150), 1, cv2.LINE_AA)
+
+            # Draw bar
+            bar_w = 100
+            bar_h = 8
+            fill_w = int(score * bar_w)
+
+            # Background bar
+            cv2.rectangle(canvas, (x_offset + 140, y_pos + 4), (x_offset + 140 + bar_w, y_pos + 4 + bar_h), (50, 50, 50), -1)
+            # Foreground bar
+            if fill_w > 0:
+                cv2.rectangle(canvas, (x_offset + 140, y_pos + 4), (x_offset + 140 + fill_w, y_pos + 4 + bar_h), (0, 200, 100), -1)
+
+            y_pos += 25
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
@@ -167,7 +211,7 @@ def main():
         min_face_detection_confidence         = 0.5,
         min_face_presence_confidence          = 0.5,
         min_tracking_confidence               = 0.5,
-        output_face_blendshapes               = False,
+        output_face_blendshapes               = True,
         output_facial_transformation_matrixes = False,
     )
 
@@ -215,15 +259,18 @@ def main():
                     pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
                     zm, zx = z_range(pts)
 
-                    draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-                    draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-                    draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+                    draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, zm, zx, 2)
+                    draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, zm, zx, 1)
+                    draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, zm, zx, 1)
                     draw_dots(canvas, pts, zm, zx)
+
+                if result.face_blendshapes:
+                    draw_blendshapes(canvas, result.face_blendshapes)
             else:
                 smoother.smoothed = None
 
