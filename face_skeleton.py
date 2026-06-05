@@ -253,7 +253,7 @@ def main():
 
             canvas = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
-            if result.face_landmarks:
+            if result and result.face_landmarks:
                 for face in result.face_landmarks:
                     smoothed_face = smoother.update(face)
                     pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
@@ -287,6 +287,7 @@ def main():
                 break
             if key == ord(' '):
                 paused = not paused
+                print(f"[INFO] {'Paused' if paused else 'Resumed'}")
             if key == ord('s') and smoother.smoothed is not None:
                 with open("face_landmarks.txt", "w") as f:
                     f.write("id,x,y,z\n")
