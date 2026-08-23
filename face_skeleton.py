@@ -143,7 +143,7 @@ class LandmarkSmoother:
 
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
+        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
         print("[SETUP] Done.")
 
