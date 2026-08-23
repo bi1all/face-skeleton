@@ -1,12 +1,30 @@
 import pytest
 
-from face_skeleton import to_pixels, z_range
+from face_skeleton import to_pixels, z_range, download_model, MODEL_PATH, MODEL_URL
 
 class MockLandmark:
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
+
+def test_download_model_already_exists(mocker):
+    mock_exists = mocker.patch('os.path.exists', return_value=True)
+    mock_urlretrieve = mocker.patch('urllib.request.urlretrieve')
+
+    download_model()
+
+    mock_exists.assert_called_once_with(MODEL_PATH)
+    mock_urlretrieve.assert_not_called()
+
+def test_download_model_not_exists(mocker):
+    mock_exists = mocker.patch('os.path.exists', return_value=False)
+    mock_urlretrieve = mocker.patch('urllib.request.urlretrieve')
+
+    download_model()
+
+    mock_exists.assert_called_once_with(MODEL_PATH)
+    mock_urlretrieve.assert_called_once_with(MODEL_URL, MODEL_PATH)
 
 def test_to_pixels_happy_path():
     landmarks = [
