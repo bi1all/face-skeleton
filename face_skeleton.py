@@ -100,6 +100,19 @@ C_BROW = (0,   130, 255)
 C_LIPS = (30,  50,  240)
 C_IRIS = (255, 255, 255)
 
+# ── CONNECTION SPECS ──────────────────────────────────────────────────────────
+# Define connection specifications once to avoid recreating the list inside the loop
+CONNECTION_SPECS = [
+    (FACEMESH_TESSELATION,   C_MESH, 1),
+    (FACEMESH_FACE_OVAL,     C_OVAL, 2),
+    (FACEMESH_LEFT_EYE,      C_EYE,  1),
+    (FACEMESH_RIGHT_EYE,     C_EYE,  1),
+    (FACEMESH_LEFT_EYEBROW,  C_BROW, 1),
+    (FACEMESH_RIGHT_EYEBROW, C_BROW, 1),
+    (FACEMESH_LIPS,          C_LIPS, 1),
+    (FACEMESH_IRISES,        C_IRIS, 1)
+]
+
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
 class SmoothedLandmark:
