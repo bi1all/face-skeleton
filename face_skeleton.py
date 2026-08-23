@@ -87,7 +87,8 @@ CAMERA_INDEX = 0
 CANVAS_W     = 1280
 CANVAS_H     = 960
 MODEL_PATH   = "face_landmarker.task"
-MODEL_URL    = (
+MODEL_URL    = os.environ.get(
+    "MODEL_URL",
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
