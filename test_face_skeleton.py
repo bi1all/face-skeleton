@@ -1,5 +1,6 @@
 import pytest
-from face_skeleton import to_pixels
+
+from face_skeleton import to_pixels, z_range
 
 class MockLandmark:
     def __init__(self, x, y, z):
@@ -71,3 +72,25 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+
+def test_z_range_standard():
+    pts = [(10, 20, 5), (30, 40, 15), (50, 60, 2)]
+    assert z_range(pts) == (2, 15)
+
+def test_z_range_single_element():
+    pts = [(10, 20, 5)]
+    assert z_range(pts) == (5, 5)
+
+def test_z_range_negative_values():
+    pts = [(10, 20, -5), (30, 40, -15), (50, 60, -2)]
+    assert z_range(pts) == (-15, -2)
+
+def test_z_range_mixed_values():
+    pts = [(10, 20, -5), (30, 40, 15), (50, 60, 0)]
+    assert z_range(pts) == (-5, 15)
+
+def test_z_range_empty_list():
+    pts = []
+    with pytest.raises(ValueError):
+        z_range(pts)
