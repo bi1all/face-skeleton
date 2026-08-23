@@ -139,8 +139,9 @@ def z_range(pts):
     return min(zs), max(zs)
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
+    n = len(pts)
     for a, b in connections:
-        if a < len(pts) and b < len(pts):
+        if a < n and b < n:
             cv2.line(canvas,
                      (pts[a][0], pts[a][1]),
                      (pts[b][0], pts[b][1]),
