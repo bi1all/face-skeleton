@@ -72,3 +72,38 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+def test_to_pixels_inversion_logic():
+    # specifically verify the 1.0 - lm.x logic
+    landmarks = [MockLandmark(0.25, 0.5, 0.0)]
+    w, h = 100, 100
+    res = to_pixels(landmarks, w, h)
+    # x should be int((1.0 - 0.25) * 100) = 75
+    assert res[0][0] == 75
+
+def test_to_pixels_scaling():
+    # specifically verify the scaling logic for x and y
+    landmarks = [MockLandmark(0.1, 0.2, 0.5)]
+    w, h = 1000, 2000
+    res = to_pixels(landmarks, w, h)
+    # x should be int((1.0 - 0.1) * 1000) = 900
+    # y should be int(0.2 * 2000) = 400
+    assert res[0][0] == 900
+    assert res[0][1] == 400
+    assert res[0][2] == 0.5 # z is unmodified
+
+def test_to_pixels_boundary_values():
+    landmarks = [
+        MockLandmark(-1.0, -1.0, -1.0),
+        MockLandmark(2.0, 2.0, 2.0)
+    ]
+    w, h = 100, 100
+    res = to_pixels(landmarks, w, h)
+
+    # 1st point: x = (1 - (-1.0)) * 100 = 200, y = -1.0 * 100 = -100
+    assert res[0][0] == 200
+    assert res[0][1] == -100
+
+    # 2nd point: x = (1 - 2.0) * 100 = -100, y = 2.0 * 100 = 200
+    assert res[1][0] == -100
+    assert res[1][1] == 200
