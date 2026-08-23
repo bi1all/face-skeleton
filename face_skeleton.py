@@ -211,7 +211,7 @@ def process_frame(landmarker, frame):
     return result
 
 def render_result(canvas, result, smoother):
-    if result.face_landmarks:
+    if result and result.face_landmarks:
         for face in result.face_landmarks:
             smoothed_face = smoother.update(face)
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
