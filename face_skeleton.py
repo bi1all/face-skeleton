@@ -135,7 +135,7 @@ def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
 
 def z_range(pts):
-    zs = [z for _, _, z in pts]
+    zs = [pt[2] for pt in pts]
     return min(zs), max(zs)
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
