@@ -1,5 +1,6 @@
 import pytest
-from face_skeleton import to_pixels
+
+from face_skeleton import to_pixels, z_range
 
 class MockLandmark:
     def __init__(self, x, y, z):
