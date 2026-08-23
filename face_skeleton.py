@@ -145,7 +145,9 @@ def download_model():
         print("[SETUP] Done.")
 
 def to_pixels(landmarks, w, h):
-    return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
+    x_scale = w - 1 if w > 0 else w
+    y_scale = h - 1 if h > 0 else h
+    return [(int((1.0 - lm.x) * x_scale), int(lm.y * y_scale), lm.z) for lm in landmarks]
 
 def z_range(pts):
     if not pts:

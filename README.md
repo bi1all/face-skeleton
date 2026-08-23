@@ -24,7 +24,7 @@ CPU-Only - No GPU dependency, runs on potato hardware
 
 ```bash
 
-pip install mediapipe opencv-python numpy
+pip install mediapipe opencv-python numpy pytest
 
 ```
 
@@ -57,5 +57,4 @@ Uses MediaPipe Tasks Face Landmark Detection to extract 468 3D points from your 
 Landmarks saved as JSON with x, y, z coordinates for each point. Use for ML training, animation rigging, or just staring at yourself.
 
 Built with MediaPipe. No data sent anywhere.
-
 
