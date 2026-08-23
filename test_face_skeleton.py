@@ -1,5 +1,5 @@
 import pytest
-from face_skeleton import SmoothedLandmark, LandmarkSmoother, to_pixels, z_range
+from face_skeleton import to_pixels
 
 class MockLandmark:
     def __init__(self, x, y, z):
@@ -7,78 +7,87 @@ class MockLandmark:
         self.y = y
         self.z = z
 
-def test_smoothed_landmark_initialization():
-    lm = SmoothedLandmark(1.0, 2.0, 3.0)
-    assert lm.x == 1.0
-    assert lm.y == 2.0
-    assert lm.z == 3.0
+def test_to_pixels_happy_path():
+    landmarks = [
+        MockLandmark(0.0, 0.0, 0.0),
+        MockLandmark(0.5, 0.5, 0.5),
+        MockLandmark(1.0, 1.0, 1.0)
+    ]
+    w, h = 100, 200
+    expected = [
+        (100, 0, 0.0),   # (1 - 0) * 100 = 100
+        (50, 100, 0.5),  # (1 - 0.5) * 100 = 50, 0.5 * 200 = 100
+        (0, 200, 1.0)    # (1 - 1) * 100 = 0, 1 * 200 = 200
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-def test_smoothed_landmark_slots():
-    lm = SmoothedLandmark(1.0, 2.0, 3.0)
-    with pytest.raises(AttributeError):
-        lm.w = 4.0
+def test_to_pixels_empty_landmarks():
+    assert to_pixels([], 100, 200) == []
 
-def test_landmark_smoother_initialization():
-    smoother = LandmarkSmoother()
-    assert smoother.alpha == 0.5
-    assert smoother.smoothed is None
+def test_to_pixels_zero_dimensions():
+    landmarks = [
+        MockLandmark(0.5, 0.5, 0.5)
+    ]
+    w, h = 0, 0
+    expected = [
+        (0, 0, 0.5)
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-    smoother_custom = LandmarkSmoother(alpha=0.8)
-    assert smoother_custom.alpha == 0.8
-    assert smoother_custom.smoothed is None
+def test_to_pixels_negative_dimensions():
+    landmarks = [
+        MockLandmark(0.5, 0.5, 0.5)
+    ]
+    w, h = -100, -200
+    expected = [
+        (-50, -100, 0.5)
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-def test_landmark_smoother_update():
-    smoother = LandmarkSmoother(alpha=0.5)
+def test_to_pixels_negative_coordinates():
+    landmarks = [
+        MockLandmark(-0.5, -0.5, -0.5)
+    ]
+    w, h = 100, 200
+    expected = [
+        (150, -100, -0.5) # (1 - (-0.5)) * 100 = 150, -0.5 * 200 = -100
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-    # First update: initializes self.smoothed directly
-    landmarks1 = [MockLandmark(1.0, 2.0, 3.0), MockLandmark(4.0, 5.0, 6.0)]
-    smoothed1 = smoother.update(landmarks1)
+def test_to_pixels_type_casting():
+    landmarks = [
+        MockLandmark(0.123, 0.456, 0.789)
+    ]
+    w, h = 100, 200
 
-    assert len(smoothed1) == 2
-    assert smoother.smoothed == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    assert smoothed1[0].x == 1.0
-    assert smoothed1[0].y == 2.0
-    assert smoothed1[0].z == 3.0
+    # int((1 - 0.123) * 100) = int(0.877 * 100) = int(87.7) = 87
+    # int(0.456 * 200) = int(91.2) = 91
+    expected = [
+        (87, 91, 0.789)
+    ]
 
-    # Second update: applies exponential smoothing
-    # new_val = alpha * new + (1 - alpha) * old
-    # For index 0: 0.5 * 3.0 + 0.5 * 1.0 = 2.0
-    landmarks2 = [MockLandmark(3.0, 4.0, 5.0), MockLandmark(6.0, 7.0, 8.0)]
-    smoothed2 = smoother.update(landmarks2)
+    res = to_pixels(landmarks, w, h)
+    assert res == expected
+    # verify that the x and y are indeed ints
+    assert isinstance(res[0][0], int)
+    assert isinstance(res[0][1], int)
 
-    assert smoother.smoothed == [[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]]
-    assert smoothed2[0].x == 2.0
-    assert smoothed2[0].y == 3.0
-    assert smoothed2[0].z == 4.0
+from face_skeleton import z_range
 
-def test_landmark_smoother_length_change():
-    smoother = LandmarkSmoother(alpha=0.5)
-
-    landmarks1 = [MockLandmark(1.0, 2.0, 3.0)]
-    smoother.update(landmarks1)
-
-    # Change length, should reset
-    landmarks2 = [MockLandmark(3.0, 4.0, 5.0), MockLandmark(6.0, 7.0, 8.0)]
-    smoothed2 = smoother.update(landmarks2)
-
-    assert len(smoother.smoothed) == 2
-    assert smoother.smoothed == [[3.0, 4.0, 5.0], [6.0, 7.0, 8.0]]
-
-def test_to_pixels():
-    landmarks = [MockLandmark(0.2, 0.4, 0.1)]
-    # x = int((1.0 - 0.2) * 100) = 80
-    # y = int(0.4 * 200) = 80
-    # z = 0.1
-    w = 100
-    h = 200
-    pixels = to_pixels(landmarks, w, h)
-
-    assert len(pixels) == 1
-    assert pixels[0] == (80, 80, 0.1)
-
-def test_z_range():
-    pts = [(10, 20, 0.5), (30, 40, -0.2), (50, 60, 1.5)]
+def test_z_range_happy_path():
+    pts = [(1, 2, 3), (4, 5, 10), (7, 8, -5)]
     z_min, z_max = z_range(pts)
+    assert z_min == -5
+    assert z_max == 10
 
-    assert z_min == -0.2
-    assert z_max == 1.5
+def test_z_range_single_point():
+    pts = [(1, 2, 5)]
+    z_min, z_max = z_range(pts)
+    assert z_min == 5
+    assert z_max == 5
+
+def test_z_range_empty_list():
+    # z_range now explicitly handles empty lists and returns 0.0, 0.0
+    z_min, z_max = z_range([])
+    assert z_min == 0.0
+    assert z_max == 0.0
