@@ -129,14 +129,17 @@ class LandmarkSmoother:
 
     def update(self, landmarks):
         if self.smoothed is None or len(self.smoothed) != len(landmarks):
-            self.smoothed = [[lm.x, lm.y, lm.z] for lm in landmarks]
+            self.smoothed = [SmoothedLandmark(lm.x, lm.y, lm.z) for lm in landmarks]
         else:
+            alpha = self.alpha
+            inv_alpha = 1.0 - alpha
             for i, lm in enumerate(landmarks):
-                self.smoothed[i][0] = self.alpha * lm.x + (1 - self.alpha) * self.smoothed[i][0]
-                self.smoothed[i][1] = self.alpha * lm.y + (1 - self.alpha) * self.smoothed[i][1]
-                self.smoothed[i][2] = self.alpha * lm.z + (1 - self.alpha) * self.smoothed[i][2]
+                s = self.smoothed[i]
+                s.x = alpha * lm.x + inv_alpha * s.x
+                s.y = alpha * lm.y + inv_alpha * s.y
+                s.z = alpha * lm.z + inv_alpha * s.z
 
-        return [SmoothedLandmark(s[0], s[1], s[2]) for s in self.smoothed]
+        return self.smoothed
 
 def download_model():
     if not os.path.exists(MODEL_PATH):
