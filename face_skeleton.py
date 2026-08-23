@@ -100,6 +100,19 @@ C_BROW = (0,   130, 255)
 C_LIPS = (30,  50,  240)
 C_IRIS = (255, 255, 255)
 
+# ── CONNECTION SPECS ──────────────────────────────────────────────────────────
+# Define connection specifications once to avoid recreating the list inside the loop
+CONNECTION_SPECS = [
+    (FACEMESH_TESSELATION,   C_MESH, 1),
+    (FACEMESH_FACE_OVAL,     C_OVAL, 2),
+    (FACEMESH_LEFT_EYE,      C_EYE,  1),
+    (FACEMESH_RIGHT_EYE,     C_EYE,  1),
+    (FACEMESH_LEFT_EYEBROW,  C_BROW, 1),
+    (FACEMESH_RIGHT_EYEBROW, C_BROW, 1),
+    (FACEMESH_LIPS,          C_LIPS, 1),
+    (FACEMESH_IRISES,        C_IRIS, 1)
+]
+
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
 class SmoothedLandmark:
@@ -221,14 +234,8 @@ def main():
                     pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
                     zm, zx = z_range(pts)
 
-                    draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-                    draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-                    draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+                    for connections, color, thickness in CONNECTION_SPECS:
+                        draw_connections(canvas, pts, connections, color, thickness)
                     draw_dots(canvas, pts, zm, zx)
             else:
                 smoother.smoothed = None
