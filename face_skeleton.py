@@ -151,7 +151,8 @@ def z_range(pts):
     if not pts:
         return 0.0, 0.0
     min_z = max_z = pts[0][2]
-    for _, _, z in pts:
+    for pt in pts:
+        z = pt[2]
         if z < min_z: min_z = z
         elif z > max_z: max_z = z
     return min_z, max_z
