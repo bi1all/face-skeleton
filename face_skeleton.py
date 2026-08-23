@@ -10,6 +10,7 @@ import importlib.util
 import urllib.request
 import os
 import time
+import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # mediapipe 0.10.x broke the normal import path for face_mesh_connections.
@@ -91,6 +92,7 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+MODEL_HASH   = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -125,10 +127,28 @@ class LandmarkSmoother:
 
         return [SmoothedLandmark(s[0], s[1], s[2]) for s in self.smoothed]
 
+def check_model_hash():
+    if not os.path.exists(MODEL_PATH):
+        return False
+    sha256_hash = hashlib.sha256()
+    with open(MODEL_PATH, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest() == MODEL_HASH
+
 def download_model():
+    if os.path.exists(MODEL_PATH):
+        if not check_model_hash():
+            print("[SETUP] Existing face_landmarker.task hash mismatch. Deleting and redownloading...")
+            os.remove(MODEL_PATH)
+
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        if not check_model_hash():
+            if os.path.exists(MODEL_PATH):
+                os.remove(MODEL_PATH)
+            raise RuntimeError("Security Error: Downloaded model hash does not match expected hash!")
         print("[SETUP] Done.")
 
 def to_pixels(landmarks, w, h):
