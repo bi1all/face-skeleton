@@ -72,3 +72,36 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+def test_z_range_happy_path():
+    pts = [
+        (10, 20, 0.5),
+        (15, 25, 0.1),
+        (5, 5, 0.9),
+        (30, 40, 0.4)
+    ]
+    assert z_range(pts) == (0.1, 0.9)
+
+def test_z_range_empty_list():
+    assert z_range([]) == (0.0, 0.0)
+
+def test_z_range_single_point():
+    pts = [(10, 20, 0.7)]
+    assert z_range(pts) == (0.7, 0.7)
+
+def test_z_range_all_same_z():
+    pts = [
+        (10, 20, 0.3),
+        (15, 25, 0.3),
+        (5, 5, 0.3)
+    ]
+    assert z_range(pts) == (0.3, 0.3)
+
+def test_z_range_negative_z():
+    pts = [
+        (10, 20, -0.5),
+        (15, 25, 0.1),
+        (5, 5, -0.9),
+        (30, 40, 0.4)
+    ]
+    assert z_range(pts) == (-0.9, 0.4)
