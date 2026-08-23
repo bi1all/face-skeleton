@@ -1,6 +1,7 @@
 import pytest
 
-from face_skeleton import to_pixels, z_range
+from unittest.mock import MagicMock
+from face_skeleton import to_pixels, z_range, _load_connections
 
 class MockLandmark:
     def __init__(self, x, y, z):
@@ -72,3 +73,22 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+def test_load_connections_success(mocker):
+    mocker.patch('os.path.exists', return_value=True)
+
+    mock_spec = MagicMock()
+    mock_mod = MagicMock()
+
+    mocker.patch('importlib.util.spec_from_file_location', return_value=mock_spec)
+    mocker.patch('importlib.util.module_from_spec', return_value=mock_mod)
+
+    mod = _load_connections()
+
+    assert mod == mock_mod
+    mock_spec.loader.exec_module.assert_called_once_with(mock_mod)
+
+def test_load_connections_fallback(mocker):
+    mocker.patch('os.path.exists', return_value=False)
+    mod = _load_connections()
+    assert mod is None
