@@ -10,6 +10,7 @@ import importlib.util
 import urllib.request
 import os
 import time
+import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # mediapipe 0.10.x broke the normal import path for face_mesh_connections.
@@ -91,6 +92,8 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+EXPECTED_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+MAX_SIZE      = 50 * 1024 * 1024  # 50 MB
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -144,8 +147,36 @@ class LandmarkSmoother:
 def download_model():
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-        print("[SETUP] Done.")
+        try:
+            req = urllib.request.Request(MODEL_URL)
+            with urllib.request.urlopen(req, timeout=30) as response:
+                file_size = 0
+                sha256 = hashlib.sha256()
+                data = bytearray()
+
+                while True:
+                    chunk = response.read(8192)
+                    if not chunk:
+                        break
+
+                    file_size += len(chunk)
+                    if file_size > MAX_SIZE:
+                        raise ValueError(f"Download exceeded maximum size of {MAX_SIZE} bytes.")
+
+                    data.extend(chunk)
+                    sha256.update(chunk)
+
+                actual_hash = sha256.hexdigest()
+                if actual_hash != EXPECTED_HASH:
+                    raise ValueError(f"Hash mismatch. Expected {EXPECTED_HASH}, got {actual_hash}.")
+
+                with open(MODEL_PATH, 'wb') as f:
+                    f.write(data)
+
+                print("[SETUP] Done.")
+        except Exception as e:
+            print(f"[ERROR] Failed to download model: {e}")
+            raise
 
 def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
