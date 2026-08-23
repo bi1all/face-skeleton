@@ -6,40 +6,37 @@ mediapipe 0.10.35 Tasks API | Python 3.12 | RGB camera 0
 import cv2
 import numpy as np
 import mediapipe as mp
-import importlib.util
 import urllib.request
 import os
 import time
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
-# mediapipe 0.10.x broke the normal import path for face_mesh_connections.
-# Load the .py file directly from disk using importlib — bypasses module registry.
+# Securely load connection constants from the Mediapipe Tasks API.
 
-def _load_connections():
-    mp_dir    = os.path.dirname(mp.__file__)
-    conn_file = os.path.join(mp_dir, 'python', 'solutions', 'face_mesh_connections.py')
-    if os.path.exists(conn_file):
-        spec = importlib.util.spec_from_file_location('_fmc', conn_file)
-        mod  = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    return None
+def _convert_connections(connections_list):
+    return frozenset([(conn.start, conn.end) for conn in connections_list])
 
-_fmc = _load_connections()
+try:
+    from mediapipe.tasks.python.vision import face_landmarker
+    fmc = face_landmarker.FaceLandmarksConnections
 
-if _fmc:
-    FACEMESH_TESSELATION   = _fmc.FACEMESH_TESSELATION
-    FACEMESH_FACE_OVAL     = _fmc.FACEMESH_FACE_OVAL
-    FACEMESH_LEFT_EYE      = _fmc.FACEMESH_LEFT_EYE
-    FACEMESH_RIGHT_EYE     = _fmc.FACEMESH_RIGHT_EYE
-    FACEMESH_LEFT_EYEBROW  = _fmc.FACEMESH_LEFT_EYEBROW
-    FACEMESH_RIGHT_EYEBROW = _fmc.FACEMESH_RIGHT_EYEBROW
-    FACEMESH_LIPS          = _fmc.FACEMESH_LIPS
-    FACEMESH_IRISES        = getattr(_fmc, 'FACEMESH_IRISES', frozenset())
-    print("[INFO] Connection constants loaded from mediapipe package files.")
-else:
+    FACEMESH_TESSELATION   = _convert_connections(fmc.FACE_LANDMARKS_TESSELATION)
+    FACEMESH_FACE_OVAL     = _convert_connections(fmc.FACE_LANDMARKS_FACE_OVAL)
+    FACEMESH_LEFT_EYE      = _convert_connections(fmc.FACE_LANDMARKS_LEFT_EYE)
+    FACEMESH_RIGHT_EYE     = _convert_connections(fmc.FACE_LANDMARKS_RIGHT_EYE)
+    FACEMESH_LEFT_EYEBROW  = _convert_connections(fmc.FACE_LANDMARKS_LEFT_EYEBROW)
+    FACEMESH_RIGHT_EYEBROW = _convert_connections(fmc.FACE_LANDMARKS_RIGHT_EYEBROW)
+    FACEMESH_LIPS          = _convert_connections(fmc.FACE_LANDMARKS_LIPS)
+
+    # Irises are split in the modern API, combine them
+    left_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_LEFT_IRIS', []))
+    right_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_RIGHT_IRIS', []))
+    FACEMESH_IRISES = left_iris | right_iris
+
+    print("[INFO] Connection constants loaded securely from FaceLandmarksConnections.")
+except (ImportError, AttributeError):
     # Hardcoded fallback — contour skeleton, no tesselation fill
-    print("[INFO] face_mesh_connections.py not found — using hardcoded contour skeleton.")
+    print("[INFO] FaceLandmarksConnections not found — using hardcoded contour skeleton.")
     FACEMESH_TESSELATION   = frozenset()
     FACEMESH_FACE_OVAL = frozenset([
         (10,338),(338,297),(297,332),(332,284),(284,251),(251,389),(389,356),
