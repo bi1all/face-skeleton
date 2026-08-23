@@ -157,10 +157,8 @@ def draw_dots(canvas, pts, z_min, z_max):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
-def main():
-    download_model()
-
-    options = FaceLandmarkerOptions(
+def setup_landmarker_options():
+    return FaceLandmarkerOptions(
         base_options                          = BaseOptions(model_asset_path=MODEL_PATH),
         running_mode                          = VisionRunningMode.VIDEO,
         num_faces                             = 1,
@@ -171,12 +169,61 @@ def main():
         output_facial_transformation_matrixes = False,
     )
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+def init_camera(camera_index, fps=30):
+    cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        print("[ERROR] Cannot open camera 0.")
+        print(f"[ERROR] Cannot open camera {camera_index}.")
+        return None
+
+    cap.set(cv2.CAP_PROP_FPS, fps)
+    return cap
+
+def process_frame(landmarker, frame):
+    timestamp_ms = int(time.time() * 1000)
+
+    # ── PRIVACY BARRIER ──────────────────────────────────────────────
+    rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result   = landmarker.detect_for_video(mp_image, timestamp_ms)
+    # ─────────────────────────────────────────────────────────────────
+    return result
+
+def render_result(canvas, result, smoother):
+    if result.face_landmarks:
+        for face in result.face_landmarks:
+            smoothed_face = smoother.update(face)
+            pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
+            zm, zx = z_range(pts)
+
+            draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
+            draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
+            draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
+            draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
+            draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
+            draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
+            draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
+            draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+            draw_dots(canvas, pts, zm, zx)
+    else:
+        smoother.smoothed = None
+
+def save_landmarks(smoother, filename="face_landmarks.txt"):
+    if smoother.smoothed is not None:
+        with open(filename, "w") as f:
+            f.write("id,x,y,z\n")
+            for i, (x, y, z) in enumerate(smoother.smoothed):
+                f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
+        print(f"[SAVED] {filename}")
+
+def main():
+    download_model()
+
+    options = setup_landmarker_options()
+
+    cap = init_camera(CAMERA_INDEX)
+    if cap is None:
         return
 
-    cap.set(cv2.CAP_PROP_FPS, 30)
     print("[INFO] Running. ESC = quit | S = save landmarks")
 
     last_result = None
@@ -191,16 +238,8 @@ def main():
                 if not ret:
                     continue
 
-                timestamp_ms = int(time.time() * 1000)
-
-                # ── PRIVACY BARRIER ──────────────────────────────────────────────
-                rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                del frame, rgb
-                result      = landmarker.detect_for_video(mp_image, timestamp_ms)
+                result      = process_frame(landmarker, frame)
                 last_result = result
-                del mp_image
-                # ─────────────────────────────────────────────────────────────────
             else:
                 # If paused, we keep using the `last_result`
                 result = last_result
@@ -209,23 +248,7 @@ def main():
 
             canvas = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
-            if result.face_landmarks:
-                for face in result.face_landmarks:
-                    smoothed_face = smoother.update(face)
-                    pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
-                    zm, zx = z_range(pts)
-
-                    draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-                    draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-                    draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
-                    draw_dots(canvas, pts, zm, zx)
-            else:
-                smoother.smoothed = None
+            render_result(canvas, result, smoother)
 
             now    = time.perf_counter()
             fps    = 1.0 / (now - t_prev + 1e-9)
@@ -240,12 +263,8 @@ def main():
                 break
             if key == ord(' '):
                 paused = not paused
-            if key == ord('s') and smoother.smoothed is not None:
-                with open("face_landmarks.txt", "w") as f:
-                    f.write("id,x,y,z\n")
-                    for i, (x, y, z) in enumerate(smoother.smoothed):
-                        f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
-                print("[SAVED] face_landmarks.txt")
+            if key == ord('s'):
+                save_landmarks(smoother)
 
     cap.release()
     cv2.destroyAllWindows()
