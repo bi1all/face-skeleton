@@ -188,6 +188,7 @@ def main():
     t_prev      = time.perf_counter()
     smoother    = LandmarkSmoother(alpha=0.5)
     paused      = False
+    canvas      = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
     with FaceLandmarker.create_from_options(options) as landmarker:
         while True:
@@ -212,7 +213,7 @@ def main():
                 # We need to simulate time passing for fps calculation, though fps might not make as much sense when paused
                 time.sleep(0.01)
 
-            canvas = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
+            canvas.fill(0)
 
             if result.face_landmarks:
                 for face in result.face_landmarks:
