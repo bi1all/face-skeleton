@@ -241,11 +241,22 @@ def main():
             if key == ord(' '):
                 paused = not paused
             if key == ord('s') and smoother.smoothed is not None:
-                with open("face_landmarks.txt", "w") as f:
-                    f.write("id,x,y,z\n")
-                    for i, (x, y, z) in enumerate(smoother.smoothed):
-                        f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
-                print("[SAVED] face_landmarks.txt")
+                save_path = "face_landmarks.txt"
+                if os.path.islink(save_path):
+                    print(f"[ERROR] {save_path} is a symlink. Aborting save.")
+                else:
+                    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                    if hasattr(os, 'O_NOFOLLOW'):
+                        flags |= getattr(os, 'O_NOFOLLOW')
+                    try:
+                        fd = os.open(save_path, flags, 0o666)
+                        with os.fdopen(fd, 'w') as f:
+                            f.write("id,x,y,z\n")
+                            for i, (x, y, z) in enumerate(smoother.smoothed):
+                                f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
+                        print("[SAVED] face_landmarks.txt")
+                    except OSError as e:
+                        print(f"[ERROR] Failed to save {save_path}: {e}")
 
     cap.release()
     cv2.destroyAllWindows()
