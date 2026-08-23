@@ -10,6 +10,8 @@ import importlib.util
 import urllib.request
 import os
 import time
+import hashlib
+import tempfile
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # mediapipe 0.10.x broke the normal import path for face_mesh_connections.
@@ -91,6 +93,8 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+EXPECTED_MODEL_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+MAX_MODEL_SIZE      = 40 * 1024 * 1024  # 40 MB max
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -144,7 +148,43 @@ class LandmarkSmoother:
 def download_model():
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+
+        hasher = hashlib.sha256()
+        downloaded_size = 0
+
+        # Open URL with a 30 second timeout
+        with urllib.request.urlopen(MODEL_URL, timeout=30) as response:
+            with tempfile.NamedTemporaryFile(dir=os.path.dirname(os.path.abspath(MODEL_PATH)) or '.', delete=False) as tmp_file:
+                tmp_file_name = tmp_file.name
+                try:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+
+                        downloaded_size += len(chunk)
+                        if downloaded_size > MAX_MODEL_SIZE:
+                            raise ValueError(f"Downloaded model exceeded max size of {MAX_MODEL_SIZE} bytes.")
+
+                        hasher.update(chunk)
+                        tmp_file.write(chunk)
+
+                    # Verify hash
+                    if hasher.hexdigest() != EXPECTED_MODEL_HASH:
+                        raise ValueError("Downloaded model checksum mismatch. Security abort.")
+
+                    # Move temporary file to actual model path
+                    os.replace(tmp_file_name, MODEL_PATH)
+                except Exception:
+                    os.unlink(tmp_file_name)
+                    raise
+                finally:
+                    # Clean up temp file if it still exists (e.g. if os.replace didn't happen)
+                    if os.path.exists(tmp_file_name) and tmp_file_name != os.path.abspath(MODEL_PATH):
+                        try:
+                            os.unlink(tmp_file_name)
+                        except OSError:
+                            pass
         print("[SETUP] Done.")
 
 def to_pixels(landmarks, w, h):
