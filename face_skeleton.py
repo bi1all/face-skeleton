@@ -161,12 +161,13 @@ def z_range(pts):
     return min_z, max_z
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
-    for a, b in connections:
-        if a < len(pts) and b < len(pts):
-            cv2.line(canvas,
-                     (pts[a][0], pts[a][1]),
-                     (pts[b][0], pts[b][1]),
-                     color, thickness, cv2.LINE_AA)
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
+        return
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
+    cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
