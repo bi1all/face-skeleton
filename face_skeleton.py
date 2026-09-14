@@ -217,14 +217,8 @@ def render_result(canvas, result, smoother):
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
             zm, zx = z_range(pts)
 
-            draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-            draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-            draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+            for conn, color, thickness in CONNECTION_SPECS:
+                draw_connections(canvas, pts, conn, color, thickness)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
