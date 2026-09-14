@@ -72,3 +72,43 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+import os
+import hashlib
+from unittest.mock import patch, mock_open
+
+def test_download_model_success(mocker):
+    from face_skeleton import download_model, EXPECTED_MODEL_HASH
+    mocker.patch('os.path.exists', return_value=False)
+    mocker.patch('urllib.request.urlretrieve')
+
+    # Mock file contents to match expected hash
+    mock_file_content = b"fake_model_data"
+    mock_hash = hashlib.sha256(mock_file_content).hexdigest()
+
+    # We patch EXPECTED_MODEL_HASH just for this test to match our fake content
+    mocker.patch('face_skeleton.EXPECTED_MODEL_HASH', mock_hash)
+
+    m_open = mocker.patch('builtins.open', mock_open(read_data=mock_file_content))
+
+    # This shouldn't raise any exception
+    download_model()
+    m_open.assert_called_once_with('face_landmarker.task', 'rb')
+
+
+def test_download_model_hash_mismatch(mocker):
+    from face_skeleton import download_model
+    mocker.patch('os.path.exists', return_value=False)
+    mocker.patch('urllib.request.urlretrieve')
+
+    mock_file_content = b"corrupted_model_data"
+
+    m_open = mocker.patch('builtins.open', mock_open(read_data=mock_file_content))
+    m_remove = mocker.patch('os.remove')
+
+    # Should raise RuntimeError because the hash of 'corrupted_model_data' won't match EXPECTED_MODEL_HASH
+    with pytest.raises(RuntimeError, match="Hash mismatch for downloaded model"):
+        download_model()
+
+    m_open.assert_called_once_with('face_landmarker.task', 'rb')
+    m_remove.assert_called_once_with('face_landmarker.task')

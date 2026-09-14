@@ -9,6 +9,7 @@ import mediapipe as mp
 import importlib.util
 import urllib.request
 import os
+import hashlib
 import time
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
@@ -91,6 +92,7 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+EXPECTED_MODEL_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -143,9 +145,19 @@ class LandmarkSmoother:
 
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-        print("[SETUP] Done.")
+        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
+        try:
+            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+            with open(MODEL_PATH, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash != EXPECTED_MODEL_HASH:
+                os.remove(MODEL_PATH)
+                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
+            print("[SETUP] Done. Model integrity verified.")
+        except Exception as e:
+            if os.path.exists(MODEL_PATH):
+                os.remove(MODEL_PATH)
+            raise RuntimeError(f"Failed to download or verify model: {e}")
 
 def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
