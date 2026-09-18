@@ -1,6 +1,7 @@
 import pytest
+import os
 
-from face_skeleton import to_pixels, z_range
+from face_skeleton import to_pixels, z_range, save_landmarks, LandmarkSmoother, SmoothedLandmark
 
 class MockLandmark:
     def __init__(self, x, y, z):
@@ -72,3 +73,39 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+def test_save_landmarks():
+    filename = "test_face_landmarks.txt"
+
+    # Setup dummy smoother and landmarks
+    smoother = LandmarkSmoother()
+    smoother.smoothed = [
+        SmoothedLandmark(0.1, 0.2, 0.3),
+        SmoothedLandmark(0.4, 0.5, 0.6)
+    ]
+
+    # Save the landmarks
+    save_landmarks(smoother, filename=filename)
+
+    # Verify the file was created and contains the expected CSV content
+    assert os.path.exists(filename)
+
+    with open(filename, "r") as f:
+        content = f.read()
+
+    expected_content = "id,x,y,z\n0,0.100000,0.200000,0.300000\n1,0.400000,0.500000,0.600000\n"
+
+    assert content == expected_content
+
+    # Clean up the test file
+    os.remove(filename)
+
+def test_save_landmarks_no_data():
+    filename = "test_empty_landmarks.txt"
+
+    smoother = LandmarkSmoother()
+    smoother.smoothed = None
+
+    save_landmarks(smoother, filename=filename)
+
+    assert not os.path.exists(filename)

@@ -233,8 +233,8 @@ def save_landmarks(smoother, filename="face_landmarks.txt"):
     if smoother.smoothed is not None:
         with open(filename, "w") as f:
             f.write("id,x,y,z\n")
-            for i, (x, y, z) in enumerate(smoother.smoothed):
-                f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
+            for i, lm in enumerate(smoother.smoothed):
+                f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
         print(f"[SAVED] {filename}")
 
 def main():
