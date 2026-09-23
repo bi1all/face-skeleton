@@ -74,8 +74,8 @@ def test_to_pixels_type_casting():
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
 
-def test_save_landmarks():
-    filename = "test_face_landmarks.txt"
+def test_save_landmarks(tmp_path):
+    filename = tmp_path / "test_face_landmarks.txt"
 
     # Setup dummy smoother and landmarks
     smoother = LandmarkSmoother()
