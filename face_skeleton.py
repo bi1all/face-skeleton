@@ -11,6 +11,7 @@ import urllib.request
 import os
 import hashlib
 import time
+import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # mediapipe 0.10.x broke the normal import path for face_mesh_connections.
@@ -143,7 +144,24 @@ class LandmarkSmoother:
 
         return self.smoothed
 
+def check_model_hash():
+    if not os.path.exists(MODEL_PATH):
+        return False
+    sha256_hash = hashlib.sha256()
+    try:
+        with open(MODEL_PATH, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+    except OSError:
+        return False
+    return sha256_hash.hexdigest() == EXPECTED_MODEL_HASH
+
 def download_model():
+    if os.path.exists(MODEL_PATH):
+        if not check_model_hash():
+            print("[SETUP] Existing face_landmarker.task hash mismatch. Deleting and redownloading...")
+            os.remove(MODEL_PATH)
+
     if not os.path.exists(MODEL_PATH):
         print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
         try:
