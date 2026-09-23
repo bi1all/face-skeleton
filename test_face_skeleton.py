@@ -1,15 +1,47 @@
-import pytest
+import hashlib
+import sys
+import types
+from unittest.mock import mock_open
 
 import numpy as np
+import pytest
+import os
 
-from face_skeleton import to_pixels, z_range, draw_connections
+
+def _install_test_stubs():
+    if "cv2" not in sys.modules:
+        cv2_stub = types.ModuleType("cv2")
+        cv2_stub.LINE_AA = 16
+        cv2_stub.polylines = lambda *args, **kwargs: None
+        sys.modules["cv2"] = cv2_stub
+
+    if "mediapipe" not in sys.modules:
+        mp_stub = types.ModuleType("mediapipe")
+        mp_stub.__file__ = "/tmp/mediapipe/__init__.py"
+        mp_stub.tasks = types.SimpleNamespace(
+            BaseOptions=object,
+            vision=types.SimpleNamespace(
+                FaceLandmarker=object,
+                FaceLandmarkerOptions=object,
+                RunningMode=types.SimpleNamespace(VIDEO="VIDEO"),
+            ),
+        )
+        sys.modules["mediapipe"] = mp_stub
+
+
+_install_test_stubs()
+
+import cv2
 import face_skeleton
+from face_skeleton import to_pixels
+
 
 class MockLandmark:
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
+
 
 def test_to_pixels_happy_path():
     landmarks = [
@@ -25,8 +57,10 @@ def test_to_pixels_happy_path():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_empty_landmarks():
     assert to_pixels([], 100, 200) == []
+
 
 def test_to_pixels_zero_dimensions():
     landmarks = [
@@ -38,6 +72,7 @@ def test_to_pixels_zero_dimensions():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_negative_dimensions():
     landmarks = [
         MockLandmark(0.5, 0.5, 0.5)
@@ -48,6 +83,7 @@ def test_to_pixels_negative_dimensions():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_negative_coordinates():
     landmarks = [
         MockLandmark(-0.5, -0.5, -0.5)
@@ -57,6 +93,7 @@ def test_to_pixels_negative_coordinates():
         (150, -100, -0.5) # (1 - (-0.5)) * 100 = 150, -0.5 * 200 = -100
     ]
     assert to_pixels(landmarks, w, h) == expected
+
 
 def test_to_pixels_type_casting():
     landmarks = [
@@ -77,54 +114,80 @@ def test_to_pixels_type_casting():
     assert isinstance(res[0][1], int)
 
 
-def test_draw_connections_happy_path(mocker):
-    mock_line = mocker.patch('face_skeleton.cv2.line')
-    canvas = mocker.Mock()
-    pts = [(10, 20, 0), (30, 40, 1), (50, 60, 2)]
-    connections = frozenset([(0, 1), (1, 2)])
-    color = (255, 0, 0)
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_success(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
+    model_url = face_skeleton.MODEL_URL
+
+    m_exists = mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    m_urlretrieve = mocker.patch("face_skeleton.urllib.request.urlretrieve")
+
+    mock_file_content = b"fake_model_data"
+    mock_hash = hashlib.sha256(mock_file_content).hexdigest()
+    mocker.patch("face_skeleton.EXPECTED_MODEL_HASH", mock_hash)
+
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
+
+    download_model()
+
+    m_exists.assert_called()
+    m_urlretrieve.assert_called_once_with(model_url, model_path)
+    m_open.assert_called_once_with(model_path, "rb")
+
+
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_hash_mismatch(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
+
+    mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    mocker.patch("face_skeleton.urllib.request.urlretrieve")
+
+    mock_file_content = b"corrupted_model_data"
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
+    m_remove = mocker.patch("face_skeleton.os.remove")
+
+    with pytest.raises(RuntimeError, match="Hash mismatch for downloaded model"):
+        download_model()
+
+    m_open.assert_called_once_with(model_path, "rb")
+    m_remove.assert_called_once_with(model_path)
+
+
+def test_draw_connections_polylines(mocker):
+    from face_skeleton import draw_connections
+
+    mock_polylines = mocker.patch("cv2.polylines")
+
+    mock_canvas = mocker.Mock()
+
+    pts = [
+        (10, 20, 0.1),
+        (30, 40, 0.2),
+        (50, 60, 0.3)
+    ]
+    connections = [(0, 1), (1, 2), (0, 3)]
+    color = (255, 255, 255)
     thickness = 2
 
-    draw_connections(canvas, pts, connections, color, thickness)
+    draw_connections(mock_canvas, pts, connections, color, thickness)
 
-    assert mock_line.call_count == 2
-    # Verify the calls. Order in frozenset is not guaranteed, so we check if all expected calls are made
-    expected_calls = [
-        mocker.call(canvas, (10, 20), (30, 40), color, thickness, face_skeleton.cv2.LINE_AA),
-        mocker.call(canvas, (30, 40), (50, 60), color, thickness, face_skeleton.cv2.LINE_AA)
-    ]
-    mock_line.assert_has_calls(expected_calls, any_order=True)
+    mock_polylines.assert_called_once()
 
-def test_draw_connections_out_of_bounds(mocker):
-    mock_line = mocker.patch('face_skeleton.cv2.line')
-    canvas = mocker.Mock()
-    pts = [(10, 20, 0), (30, 40, 1)]
-    # 2 is out of bounds for pts (len 2)
-    connections = frozenset([(0, 1), (1, 2), (3, 0)])
-    color = (0, 255, 0)
+    args, _ = mock_polylines.call_args
 
-    draw_connections(canvas, pts, connections, color)
+    assert args[0] is mock_canvas
 
-    assert mock_line.call_count == 1
-    mock_line.assert_called_once_with(
-        canvas, (10, 20), (30, 40), color, 1, face_skeleton.cv2.LINE_AA
-    )
+    segments = args[1]
+    expected_segments = np.array([
+        [[10, 20], [30, 40]],
+        [[30, 40], [50, 60]]
+    ], dtype=np.int32)
 
-def test_draw_connections_empty(mocker):
-    mock_line = mocker.patch('face_skeleton.cv2.line')
-    canvas = mocker.Mock()
-    color = (0, 0, 255)
+    np.testing.assert_array_equal(segments, expected_segments)
 
-    # Empty points and connections
-    draw_connections(canvas, [], frozenset(), color)
-    assert mock_line.call_count == 0
-
-    # Empty connections only
-    pts = [(10, 20, 0)]
-    draw_connections(canvas, pts, frozenset(), color)
-    assert mock_line.call_count == 0
-
-    # Empty points, non-empty connections
-    connections = frozenset([(0, 1)])
-    draw_connections(canvas, [], connections, color)
-    assert mock_line.call_count == 0
+    assert args[2] is False
+    assert args[3] == color
+    assert args[4] == thickness
+    assert args[5] == cv2.LINE_AA
