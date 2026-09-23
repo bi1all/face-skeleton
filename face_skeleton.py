@@ -131,9 +131,12 @@ def check_model_hash():
     if not os.path.exists(MODEL_PATH):
         return False
     sha256_hash = hashlib.sha256()
-    with open(MODEL_PATH, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
+    try:
+        with open(MODEL_PATH, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+    except OSError:
+        return False
     return sha256_hash.hexdigest() == MODEL_HASH
 
 def download_model():
