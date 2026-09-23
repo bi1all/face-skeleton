@@ -5,6 +5,7 @@ from unittest.mock import mock_open
 
 import numpy as np
 import pytest
+import os
 
 
 def _install_test_stubs():
