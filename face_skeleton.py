@@ -256,20 +256,9 @@ def save_landmarks(smoother, filename="face_landmarks.txt"):
                 f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
         print(f"[SAVED] {filename}")
 
-def main():
-    download_model()
-
-    options = setup_landmarker_options()
-
-    cap = init_camera(CAMERA_INDEX)
-    if cap is None:
-        return
-
-    print("[INFO] Running. ESC = quit | S = save landmarks")
-
+def run_tracking_loop(cap, options, smoother):
     last_result = None
     t_prev      = time.perf_counter()
-    smoother    = LandmarkSmoother(alpha=0.5)
     paused      = False
     canvas      = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
@@ -308,8 +297,23 @@ def main():
             if key == ord('s'):
                 save_landmarks(smoother)
 
-    cap.release()
-    cv2.destroyAllWindows()
+def main():
+    download_model()
+
+    options = setup_landmarker_options()
+
+    cap = init_camera(CAMERA_INDEX)
+    if cap is None:
+        return
+
+    print("[INFO] Running. ESC = quit | S = save landmarks")
+    smoother = LandmarkSmoother(alpha=0.5)
+
+    try:
+        run_tracking_loop(cap, options, smoother)
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
