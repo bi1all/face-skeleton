@@ -1,6 +1,6 @@
 import timeit
 import numpy as np
-import cv2
+
 
 def draw_connections_old(canvas, pts, connections, color, thickness=1):
     for a, b in connections:
