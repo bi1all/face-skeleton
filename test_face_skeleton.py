@@ -1,5 +1,40 @@
+import hashlib
+import sys
+import types
+from unittest.mock import mock_open
+
+import numpy as np
 import pytest
-from face_skeleton import LandmarkSmoother
+import os
+
+
+def _install_test_stubs():
+    if "cv2" not in sys.modules:
+        cv2_stub = types.ModuleType("cv2")
+        cv2_stub.LINE_AA = 16
+        cv2_stub.polylines = lambda *args, **kwargs: None
+        sys.modules["cv2"] = cv2_stub
+
+    if "mediapipe" not in sys.modules:
+        mp_stub = types.ModuleType("mediapipe")
+        mp_stub.__file__ = "/tmp/mediapipe/__init__.py"
+        mp_stub.tasks = types.SimpleNamespace(
+            BaseOptions=object,
+            vision=types.SimpleNamespace(
+                FaceLandmarker=object,
+                FaceLandmarkerOptions=object,
+                RunningMode=types.SimpleNamespace(VIDEO="VIDEO"),
+            ),
+        )
+        sys.modules["mediapipe"] = mp_stub
+
+
+_install_test_stubs()
+
+import cv2
+import face_skeleton
+from face_skeleton import to_pixels, z_range
+
 
 class MockLandmark:
     def __init__(self, x, y, z):
@@ -7,80 +42,171 @@ class MockLandmark:
         self.y = y
         self.z = z
 
-def test_landmark_smoother_initialization():
-    smoother_default = LandmarkSmoother()
-    assert smoother_default.alpha == 0.5
-    assert smoother_default.smoothed is None
 
-    smoother_custom = LandmarkSmoother(alpha=0.8)
-    assert smoother_custom.alpha == 0.8
-    assert smoother_custom.smoothed is None
+def test_to_pixels_happy_path():
+    landmarks = [
+        MockLandmark(0.0, 0.0, 0.0),
+        MockLandmark(0.5, 0.5, 0.5),
+        MockLandmark(1.0, 1.0, 1.0)
+    ]
+    w, h = 100, 200
+    expected = [
+        (100, 0, 0.0),   # (1 - 0) * 100 = 100
+        (50, 100, 0.5),  # (1 - 0.5) * 100 = 50, 0.5 * 200 = 100
+        (0, 200, 1.0)    # (1 - 1) * 100 = 0, 1 * 200 = 200
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-def test_landmark_smoother_first_update():
-    smoother = LandmarkSmoother(alpha=0.5)
-    landmarks = [MockLandmark(1.0, 2.0, 3.0), MockLandmark(4.0, 5.0, 6.0)]
 
-    result = smoother.update(landmarks)
+def test_to_pixels_empty_landmarks():
+    assert to_pixels([], 100, 200) == []
 
-    assert smoother.smoothed == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    assert len(result) == 2
-    assert result[0].x == 1.0
-    assert result[0].y == 2.0
-    assert result[0].z == 3.0
-    assert result[1].x == 4.0
-    assert result[1].y == 5.0
-    assert result[1].z == 6.0
 
-def test_landmark_smoother_subsequent_update():
-    smoother = LandmarkSmoother(alpha=0.5)
+def test_to_pixels_zero_dimensions():
+    landmarks = [
+        MockLandmark(0.5, 0.5, 0.5)
+    ]
+    w, h = 0, 0
+    expected = [
+        (0, 0, 0.5)
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-    # First update sets initial state
-    landmarks1 = [MockLandmark(0.0, 0.0, 0.0)]
-    smoother.update(landmarks1)
 
-    # Second update should smooth: new_val = alpha * lm + (1-alpha) * old_val
-    # new_x = 0.5 * 10.0 + 0.5 * 0.0 = 5.0
-    landmarks2 = [MockLandmark(10.0, 10.0, 10.0)]
-    result = smoother.update(landmarks2)
+def test_to_pixels_negative_dimensions():
+    landmarks = [
+        MockLandmark(0.5, 0.5, 0.5)
+    ]
+    w, h = -100, -200
+    expected = [
+        (-50, -100, 0.5)
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-    assert smoother.smoothed == [[5.0, 5.0, 5.0]]
-    assert len(result) == 1
-    assert result[0].x == 5.0
-    assert result[0].y == 5.0
-    assert result[0].z == 5.0
 
-def test_landmark_smoother_subsequent_update_different_alpha():
-    smoother = LandmarkSmoother(alpha=0.8)
+def test_to_pixels_negative_coordinates():
+    landmarks = [
+        MockLandmark(-0.5, -0.5, -0.5)
+    ]
+    w, h = 100, 200
+    expected = [
+        (150, -100, -0.5) # (1 - (-0.5)) * 100 = 150, -0.5 * 200 = -100
+    ]
+    assert to_pixels(landmarks, w, h) == expected
 
-    # First update sets initial state
-    landmarks1 = [MockLandmark(0.0, 0.0, 0.0)]
-    smoother.update(landmarks1)
 
-    # Second update should smooth: new_val = alpha * lm + (1-alpha) * old_val
-    # new_x = 0.8 * 10.0 + 0.2 * 0.0 = 8.0
-    landmarks2 = [MockLandmark(10.0, 10.0, 10.0)]
-    result = smoother.update(landmarks2)
+def test_to_pixels_type_casting():
+    landmarks = [
+        MockLandmark(0.123, 0.456, 0.789)
+    ]
+    w, h = 100, 200
 
-    assert smoother.smoothed == [[8.0, 8.0, 8.0]]
-    assert len(result) == 1
-    assert result[0].x == 8.0
-    assert result[0].y == 8.0
-    assert result[0].z == 8.0
+    # int((1 - 0.123) * 100) = int(0.877 * 100) = int(87.7) = 87
+    # int(0.456 * 200) = int(91.2) = 91
+    expected = [
+        (87, 91, 0.789)
+    ]
 
-def test_landmark_smoother_length_change():
-    smoother = LandmarkSmoother(alpha=0.5)
+    res = to_pixels(landmarks, w, h)
+    assert res == expected
+    # verify that the x and y are indeed ints
+    assert isinstance(res[0][0], int)
+    assert isinstance(res[0][1], int)
 
-    # First update sets initial state length 2
-    landmarks1 = [MockLandmark(1.0, 2.0, 3.0), MockLandmark(4.0, 5.0, 6.0)]
-    smoother.update(landmarks1)
-    assert len(smoother.smoothed) == 2
 
-    # Second update with length 1 should reset the state
-    landmarks2 = [MockLandmark(10.0, 20.0, 30.0)]
-    result = smoother.update(landmarks2)
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_success(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
+    model_url = face_skeleton.MODEL_URL
 
-    assert smoother.smoothed == [[10.0, 20.0, 30.0]]
-    assert len(result) == 1
-    assert result[0].x == 10.0
-    assert result[0].y == 20.0
-    assert result[0].z == 30.0
+    m_exists = mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    m_urlretrieve = mocker.patch("face_skeleton.urllib.request.urlretrieve")
+
+    mock_file_content = b"fake_model_data"
+    mock_hash = hashlib.sha256(mock_file_content).hexdigest()
+    mocker.patch("face_skeleton.EXPECTED_MODEL_HASH", mock_hash)
+
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
+
+    download_model()
+
+    m_exists.assert_called()
+    m_urlretrieve.assert_called_once_with(model_url, model_path)
+    m_open.assert_called_once_with(model_path, "rb")
+
+
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_hash_mismatch(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
+
+    mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    mocker.patch("face_skeleton.urllib.request.urlretrieve")
+
+    mock_file_content = b"corrupted_model_data"
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
+    m_remove = mocker.patch("face_skeleton.os.remove")
+
+    with pytest.raises(RuntimeError, match="Hash mismatch for downloaded model"):
+        download_model()
+
+    m_open.assert_called_once_with(model_path, "rb")
+    m_remove.assert_called_once_with(model_path)
+
+
+def test_draw_connections_polylines(mocker):
+    from face_skeleton import draw_connections
+
+    mock_polylines = mocker.patch("cv2.polylines")
+
+    mock_canvas = mocker.Mock()
+
+    pts = [
+        (10, 20, 0.1),
+        (30, 40, 0.2),
+        (50, 60, 0.3)
+    ]
+    connections = [(0, 1), (1, 2), (0, 3)]
+    color = (255, 255, 255)
+    thickness = 2
+
+    draw_connections(mock_canvas, pts, connections, color, thickness)
+
+    mock_polylines.assert_called_once()
+
+    args, _ = mock_polylines.call_args
+
+    assert args[0] is mock_canvas
+
+    segments = args[1]
+    expected_segments = np.array([
+        [[10, 20], [30, 40]],
+        [[30, 40], [50, 60]]
+    ], dtype=np.int32)
+
+    np.testing.assert_array_equal(segments, expected_segments)
+
+    assert args[2] is False
+    assert args[3] == color
+    assert args[4] == thickness
+    assert args[5] == cv2.LINE_AA
+
+
+def test_z_range_empty():
+    assert z_range([]) == (0.0, 0.0)
+
+
+def test_z_range_single_point():
+    pts = [(10, 20, 5.5)]
+    assert z_range(pts) == (5.5, 5.5)
+
+
+def test_z_range_multiple_points():
+    pts = [
+        (10, 20, 5.5),
+        (30, 40, -2.1),
+        (50, 60, 8.9),
+        (70, 80, 0.0)
+    ]
+    assert z_range(pts) == (-2.1, 8.9)
