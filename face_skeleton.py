@@ -161,12 +161,13 @@ def z_range(pts):
     return min_z, max_z
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
-    for a, b in connections:
-        if a < len(pts) and b < len(pts):
-            cv2.line(canvas,
-                     (pts[a][0], pts[a][1]),
-                     (pts[b][0], pts[b][1]),
-                     color, thickness, cv2.LINE_AA)
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
+        return
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
+    cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
@@ -217,14 +218,8 @@ def render_result(canvas, result, smoother):
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
             zm, zx = z_range(pts)
 
-            draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-            draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-            draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+            for conn, color, thickness in CONNECTION_SPECS:
+                draw_connections(canvas, pts, conn, color, thickness)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
