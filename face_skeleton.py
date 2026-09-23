@@ -9,6 +9,7 @@ import mediapipe as mp
 import importlib.util
 import urllib.request
 import os
+import hashlib
 import time
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
@@ -91,6 +92,7 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+EXPECTED_MODEL_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -143,9 +145,19 @@ class LandmarkSmoother:
 
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-        print("[SETUP] Done.")
+        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
+        try:
+            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+            with open(MODEL_PATH, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash != EXPECTED_MODEL_HASH:
+                os.remove(MODEL_PATH)
+                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
+            print("[SETUP] Done. Model integrity verified.")
+        except Exception as e:
+            if os.path.exists(MODEL_PATH):
+                os.remove(MODEL_PATH)
+            raise RuntimeError(f"Failed to download or verify model: {e}")
 
 def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
@@ -153,16 +165,17 @@ def to_pixels(landmarks, w, h):
 def z_range(pts):
     if not pts:
         return 0.0, 0.0
-    zs = [z for _, _, z in pts]
-    return min(zs), max(zs)
+    z_vals = [pt[2] for pt in pts]
+    return min(z_vals), max(z_vals)
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
-    for a, b in connections:
-        if a < len(pts) and b < len(pts):
-            cv2.line(canvas,
-                     (pts[a][0], pts[a][1]),
-                     (pts[b][0], pts[b][1]),
-                     color, thickness, cv2.LINE_AA)
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
+        return
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
+    cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
@@ -213,14 +226,8 @@ def render_result(canvas, result, smoother):
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
             zm, zx = z_range(pts)
 
-            draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-            draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-            draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+            for conn, color, thickness in CONNECTION_SPECS:
+                draw_connections(canvas, pts, conn, color, thickness)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
@@ -229,8 +236,8 @@ def save_landmarks(smoother, filename="face_landmarks.txt"):
     if smoother.smoothed is not None:
         with open(filename, "w") as f:
             f.write("id,x,y,z\n")
-            for i, (x, y, z) in enumerate(smoother.smoothed):
-                f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
+            for i, lm in enumerate(smoother.smoothed):
+                f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
         print(f"[SAVED] {filename}")
 
 def main():
