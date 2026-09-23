@@ -1,7 +1,7 @@
 import timeit
 import numpy as np
 
-# Mock cv2 to avoid dependency issues if any, or just use real cv2
+# Uses real OpenCV for timing; requires opencv-python to be installed.
 import cv2
 
 def draw_connections_old(canvas, pts, connections, color, thickness=1):
