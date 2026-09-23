@@ -33,7 +33,7 @@ _install_test_stubs()
 
 import cv2
 import face_skeleton
-from face_skeleton import to_pixels
+from face_skeleton import to_pixels, z_range
 
 
 class MockLandmark:
@@ -191,3 +191,22 @@ def test_draw_connections_polylines(mocker):
     assert args[3] == color
     assert args[4] == thickness
     assert args[5] == cv2.LINE_AA
+
+
+def test_z_range_empty():
+    assert z_range([]) == (0.0, 0.0)
+
+
+def test_z_range_single_point():
+    pts = [(10, 20, 5.5)]
+    assert z_range(pts) == (5.5, 5.5)
+
+
+def test_z_range_multiple_points():
+    pts = [
+        (10, 20, 5.5),
+        (30, 40, -2.1),
+        (50, 60, 8.9),
+        (70, 80, 0.0)
+    ]
+    assert z_range(pts) == (-2.1, 8.9)
