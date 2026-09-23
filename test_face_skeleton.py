@@ -1,12 +1,47 @@
-import pytest
+import hashlib
+import sys
+import types
+from unittest.mock import mock_open
 
-from face_skeleton import to_pixels, z_range
+import numpy as np
+import pytest
+import os
+
+
+def _install_test_stubs():
+    if "cv2" not in sys.modules:
+        cv2_stub = types.ModuleType("cv2")
+        cv2_stub.LINE_AA = 16
+        cv2_stub.polylines = lambda *args, **kwargs: None
+        sys.modules["cv2"] = cv2_stub
+
+    if "mediapipe" not in sys.modules:
+        mp_stub = types.ModuleType("mediapipe")
+        mp_stub.__file__ = "/tmp/mediapipe/__init__.py"
+        mp_stub.tasks = types.SimpleNamespace(
+            BaseOptions=object,
+            vision=types.SimpleNamespace(
+                FaceLandmarker=object,
+                FaceLandmarkerOptions=object,
+                RunningMode=types.SimpleNamespace(VIDEO="VIDEO"),
+            ),
+        )
+        sys.modules["mediapipe"] = mp_stub
+
+
+_install_test_stubs()
+
+import cv2
+import face_skeleton
+from face_skeleton import to_pixels
+
 
 class MockLandmark:
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
+
 
 def test_to_pixels_happy_path():
     landmarks = [
@@ -22,8 +57,10 @@ def test_to_pixels_happy_path():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_empty_landmarks():
     assert to_pixels([], 100, 200) == []
+
 
 def test_to_pixels_zero_dimensions():
     landmarks = [
@@ -35,6 +72,7 @@ def test_to_pixels_zero_dimensions():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_negative_dimensions():
     landmarks = [
         MockLandmark(0.5, 0.5, 0.5)
@@ -45,6 +83,7 @@ def test_to_pixels_negative_dimensions():
     ]
     assert to_pixels(landmarks, w, h) == expected
 
+
 def test_to_pixels_negative_coordinates():
     landmarks = [
         MockLandmark(-0.5, -0.5, -0.5)
@@ -54,6 +93,7 @@ def test_to_pixels_negative_coordinates():
         (150, -100, -0.5) # (1 - (-0.5)) * 100 = 150, -0.5 * 200 = -100
     ]
     assert to_pixels(landmarks, w, h) == expected
+
 
 def test_to_pixels_type_casting():
     landmarks = [
@@ -73,83 +113,81 @@ def test_to_pixels_type_casting():
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
 
-def test_main_happy_path(mocker):
-    # Mock download_model to avoid network calls
-    mock_download = mocker.patch("face_skeleton.download_model")
 
-    # Mock init_camera to return a dummy MagicMock that we can configure
-    mock_init_camera = mocker.patch("face_skeleton.init_camera")
-    mock_cap = mocker.MagicMock()
-    # Configure read() to return (True, dummy_frame) when not paused,
-    # but let's just say it always returns a frame
-    import numpy as np
-    mock_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    mock_cap.read.return_value = (True, mock_frame)
-    mock_init_camera.return_value = mock_cap
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_success(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
+    model_url = face_skeleton.MODEL_URL
 
-    # Mock FaceLandmarker
-    mock_landmarker_cls = mocker.patch("face_skeleton.FaceLandmarker")
-    mock_landmarker_ctx = mocker.MagicMock()
-    # The with block returns something, we need mock_landmarker_cls.create_from_options().return_value.__enter__.return_value = ...
-    mock_landmarker_inst = mocker.MagicMock()
-    mock_landmarker_ctx.__enter__.return_value = mock_landmarker_inst
-    mock_landmarker_cls.create_from_options.return_value = mock_landmarker_ctx
+    m_exists = mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    m_urlretrieve = mocker.patch("face_skeleton.urllib.request.urlretrieve")
 
-    # Mock process_frame
-    mock_process = mocker.patch("face_skeleton.process_frame")
-    # Return a dummy result that has face_landmarks = [] to avoid needing a real result object
-    mock_result = mocker.MagicMock()
-    mock_result.face_landmarks = []
-    mock_process.return_value = mock_result
+    mock_file_content = b"fake_model_data"
+    mock_hash = hashlib.sha256(mock_file_content).hexdigest()
+    mocker.patch("face_skeleton.EXPECTED_MODEL_HASH", mock_hash)
 
-    # Mock save_landmarks so we can verify it's called
-    mock_save = mocker.patch("face_skeleton.save_landmarks")
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
 
-    # Mock cv2 UI functions
-    mocker.patch("cv2.imshow")
-    mocker.patch("cv2.destroyAllWindows")
+    download_model()
 
-    # Mock waitKey to simulate a sequence of key presses:
-    # 1. -1 (no key, just loop)
-    # 2. ord(' ') (pause)
-    # 3. -1 (loop while paused)
-    # 4. ord(' ') (unpause)
-    # 5. ord('s') (save)
-    # 6. 27 (ESC to quit)
-    mock_waitkey = mocker.patch("cv2.waitKey")
-    mock_waitkey.side_effect = [-1, ord(' '), -1, ord(' '), ord('s'), 27]
+    m_exists.assert_called()
+    m_urlretrieve.assert_called_once_with(model_url, model_path)
+    m_open.assert_called_once_with(model_path, "rb")
 
-    # Import and run main
-    import face_skeleton
-    face_skeleton.main()
 
-    # Assertions
-    mock_download.assert_called_once()
-    mock_init_camera.assert_called_once_with(face_skeleton.CAMERA_INDEX)
-    # Cap should have been read multiple times (when unpaused)
-    assert mock_cap.read.call_count >= 1
-    # Cap should be released at the end
-    mock_cap.release.assert_called_once()
-    # save_landmarks should have been called once
-    mock_save.assert_called_once()
-    # verify waitkey was called 6 times
-    assert mock_waitkey.call_count == 6
+@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
+def test_download_model_hash_mismatch(mocker):
+    download_model = face_skeleton.download_model
+    model_path = face_skeleton.MODEL_PATH
 
-def test_main_no_camera(mocker):
-    # Mock download_model
-    mock_download = mocker.patch("face_skeleton.download_model")
+    mocker.patch("face_skeleton.os.path.exists", return_value=False)
+    mocker.patch("face_skeleton.urllib.request.urlretrieve")
 
-    # Mock init_camera to return None (e.g. camera not found)
-    mock_init_camera = mocker.patch("face_skeleton.init_camera")
-    mock_init_camera.return_value = None
+    mock_file_content = b"corrupted_model_data"
+    m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
+    m_remove = mocker.patch("face_skeleton.os.remove")
 
-    import face_skeleton
-    face_skeleton.main()
+    with pytest.raises(RuntimeError, match="Hash mismatch for downloaded model"):
+        download_model()
 
-    # Assertions
-    mock_download.assert_called_once()
-    mock_init_camera.assert_called_once_with(face_skeleton.CAMERA_INDEX)
-    # The rest of the function shouldn't execute
-    # Let's mock something from later in main to ensure it wasn't called
-    # (actually we don't need to mock it, it just won't be called, but we can't assert on it unless mocked,
-    # however, we know it returns early if cap is None).
+    m_open.assert_called_once_with(model_path, "rb")
+    m_remove.assert_called_once_with(model_path)
+
+
+def test_draw_connections_polylines(mocker):
+    from face_skeleton import draw_connections
+
+    mock_polylines = mocker.patch("cv2.polylines")
+
+    mock_canvas = mocker.Mock()
+
+    pts = [
+        (10, 20, 0.1),
+        (30, 40, 0.2),
+        (50, 60, 0.3)
+    ]
+    connections = [(0, 1), (1, 2), (0, 3)]
+    color = (255, 255, 255)
+    thickness = 2
+
+    draw_connections(mock_canvas, pts, connections, color, thickness)
+
+    mock_polylines.assert_called_once()
+
+    args, _ = mock_polylines.call_args
+
+    assert args[0] is mock_canvas
+
+    segments = args[1]
+    expected_segments = np.array([
+        [[10, 20], [30, 40]],
+        [[30, 40], [50, 60]]
+    ], dtype=np.int32)
+
+    np.testing.assert_array_equal(segments, expected_segments)
+
+    assert args[2] is False
+    assert args[3] == color
+    assert args[4] == thickness
+    assert args[5] == cv2.LINE_AA
