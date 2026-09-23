@@ -9,6 +9,7 @@ import mediapipe as mp
 import importlib.util
 import urllib.request
 import os
+import hashlib
 import time
 import hashlib
 
@@ -92,7 +93,7 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
-MODEL_HASH   = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+EXPECTED_MODEL_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -101,6 +102,19 @@ C_EYE  = (210, 155, 0  )
 C_BROW = (0,   130, 255)
 C_LIPS = (30,  50,  240)
 C_IRIS = (255, 255, 255)
+
+# ── CONNECTION SPECS ──────────────────────────────────────────────────────────
+# Define connection specifications once to avoid recreating the list inside the loop
+CONNECTION_SPECS = [
+    (FACEMESH_TESSELATION,   C_MESH, 1),
+    (FACEMESH_FACE_OVAL,     C_OVAL, 2),
+    (FACEMESH_LEFT_EYE,      C_EYE,  1),
+    (FACEMESH_RIGHT_EYE,     C_EYE,  1),
+    (FACEMESH_LEFT_EYEBROW,  C_BROW, 1),
+    (FACEMESH_RIGHT_EYEBROW, C_BROW, 1),
+    (FACEMESH_LIPS,          C_LIPS, 1),
+    (FACEMESH_IRISES,        C_IRIS, 1)
+]
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -118,14 +132,17 @@ class LandmarkSmoother:
 
     def update(self, landmarks):
         if self.smoothed is None or len(self.smoothed) != len(landmarks):
-            self.smoothed = [[lm.x, lm.y, lm.z] for lm in landmarks]
+            self.smoothed = [SmoothedLandmark(lm.x, lm.y, lm.z) for lm in landmarks]
         else:
+            alpha = self.alpha
+            inv_alpha = 1.0 - alpha
             for i, lm in enumerate(landmarks):
-                self.smoothed[i][0] = self.alpha * lm.x + (1 - self.alpha) * self.smoothed[i][0]
-                self.smoothed[i][1] = self.alpha * lm.y + (1 - self.alpha) * self.smoothed[i][1]
-                self.smoothed[i][2] = self.alpha * lm.z + (1 - self.alpha) * self.smoothed[i][2]
+                s = self.smoothed[i]
+                s.x = alpha * lm.x + inv_alpha * s.x
+                s.y = alpha * lm.y + inv_alpha * s.y
+                s.z = alpha * lm.z + inv_alpha * s.z
 
-        return [SmoothedLandmark(s[0], s[1], s[2]) for s in self.smoothed]
+        return self.smoothed
 
 def check_model_hash():
     if not os.path.exists(MODEL_PATH):
@@ -146,28 +163,37 @@ def download_model():
             os.remove(MODEL_PATH)
 
     if not os.path.exists(MODEL_PATH):
-        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-        if not check_model_hash():
+        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
+        try:
+            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+            with open(MODEL_PATH, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash != EXPECTED_MODEL_HASH:
+                os.remove(MODEL_PATH)
+                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
+            print("[SETUP] Done. Model integrity verified.")
+        except Exception as e:
             if os.path.exists(MODEL_PATH):
                 os.remove(MODEL_PATH)
-            raise RuntimeError("Security Error: Downloaded model hash does not match expected hash!")
-        print("[SETUP] Done.")
+            raise RuntimeError(f"Failed to download or verify model: {e}")
 
 def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
 
 def z_range(pts):
-    zs = [z for _, _, z in pts]
-    return min(zs), max(zs)
+    if not pts:
+        return 0.0, 0.0
+    z_vals = [pt[2] for pt in pts]
+    return min(z_vals), max(z_vals)
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
-    for a, b in connections:
-        if a < len(pts) and b < len(pts):
-            cv2.line(canvas,
-                     (pts[a][0], pts[a][1]),
-                     (pts[b][0], pts[b][1]),
-                     color, thickness, cv2.LINE_AA)
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
+        return
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
+    cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
@@ -180,10 +206,8 @@ def draw_dots(canvas, pts, z_min, z_max):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
-def main():
-    download_model()
-
-    options = FaceLandmarkerOptions(
+def setup_landmarker_options():
+    return FaceLandmarkerOptions(
         base_options                          = BaseOptions(model_asset_path=MODEL_PATH),
         running_mode                          = VisionRunningMode.VIDEO,
         num_faces                             = 1,
@@ -194,18 +218,62 @@ def main():
         output_facial_transformation_matrixes = False,
     )
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+def init_camera(camera_index, fps=30):
+    cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        print("[ERROR] Cannot open camera 0.")
+        print(f"[ERROR] Cannot open camera {camera_index}.")
+        return None
+
+    cap.set(cv2.CAP_PROP_FPS, fps)
+    return cap
+
+def process_frame(landmarker, frame):
+    timestamp_ms = int(time.time() * 1000)
+
+    # ── PRIVACY BARRIER ──────────────────────────────────────────────
+    rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result   = landmarker.detect_for_video(mp_image, timestamp_ms)
+    # ─────────────────────────────────────────────────────────────────
+    return result
+
+def render_result(canvas, result, smoother):
+    if result.face_landmarks:
+        for face in result.face_landmarks:
+            smoothed_face = smoother.update(face)
+            pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
+            zm, zx = z_range(pts)
+
+            for conn, color, thickness in CONNECTION_SPECS:
+                draw_connections(canvas, pts, conn, color, thickness)
+            draw_dots(canvas, pts, zm, zx)
+    else:
+        smoother.smoothed = None
+
+def save_landmarks(smoother, filename="face_landmarks.txt"):
+    if smoother.smoothed is not None:
+        with open(filename, "w") as f:
+            f.write("id,x,y,z\n")
+            for i, lm in enumerate(smoother.smoothed):
+                f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
+        print(f"[SAVED] {filename}")
+
+def main():
+    download_model()
+
+    options = setup_landmarker_options()
+
+    cap = init_camera(CAMERA_INDEX)
+    if cap is None:
         return
 
-    cap.set(cv2.CAP_PROP_FPS, 30)
     print("[INFO] Running. ESC = quit | S = save landmarks")
 
     last_result = None
     t_prev      = time.perf_counter()
     smoother    = LandmarkSmoother(alpha=0.5)
     paused      = False
+    canvas      = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
 
     with FaceLandmarker.create_from_options(options) as landmarker:
         while True:
@@ -214,41 +282,17 @@ def main():
                 if not ret:
                     continue
 
-                timestamp_ms = int(time.time() * 1000)
-
-                # ── PRIVACY BARRIER ──────────────────────────────────────────────
-                rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                del frame, rgb
-                result      = landmarker.detect_for_video(mp_image, timestamp_ms)
+                result      = process_frame(landmarker, frame)
                 last_result = result
-                del mp_image
-                # ─────────────────────────────────────────────────────────────────
             else:
                 # If paused, we keep using the `last_result`
                 result = last_result
                 # We need to simulate time passing for fps calculation, though fps might not make as much sense when paused
                 time.sleep(0.01)
 
-            canvas = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
+            canvas.fill(0)
 
-            if result.face_landmarks:
-                for face in result.face_landmarks:
-                    smoothed_face = smoother.update(face)
-                    pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
-                    zm, zx = z_range(pts)
-
-                    draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-                    draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-                    draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-                    draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-                    draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
-                    draw_dots(canvas, pts, zm, zx)
-            else:
-                smoother.smoothed = None
+            render_result(canvas, result, smoother)
 
             now    = time.perf_counter()
             fps    = 1.0 / (now - t_prev + 1e-9)
@@ -263,12 +307,8 @@ def main():
                 break
             if key == ord(' '):
                 paused = not paused
-            if key == ord('s') and smoother.smoothed is not None:
-                with open("face_landmarks.txt", "w") as f:
-                    f.write("id,x,y,z\n")
-                    for i, (x, y, z) in enumerate(smoother.smoothed):
-                        f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
-                print("[SAVED] face_landmarks.txt")
+            if key == ord('s'):
+                save_landmarks(smoother)
 
     cap.release()
     cv2.destroyAllWindows()
