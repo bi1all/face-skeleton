@@ -154,7 +154,7 @@ def check_model_hash():
                 sha256_hash.update(byte_block)
     except OSError:
         return False
-    return sha256_hash.hexdigest() == MODEL_HASH
+    return sha256_hash.hexdigest() == EXPECTED_MODEL_HASH
 
 def download_model():
     if os.path.exists(MODEL_PATH):
