@@ -6,40 +6,39 @@ mediapipe 0.10.35 Tasks API | Python 3.12 | RGB camera 0
 import cv2
 import numpy as np
 import mediapipe as mp
-import importlib.util
 import urllib.request
 import os
+import hashlib
 import time
+import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
-# mediapipe 0.10.x broke the normal import path for face_mesh_connections.
-# Load the .py file directly from disk using importlib — bypasses module registry.
+# Securely load connection constants from the Mediapipe Tasks API.
 
-def _load_connections():
-    mp_dir    = os.path.dirname(mp.__file__)
-    conn_file = os.path.join(mp_dir, 'python', 'solutions', 'face_mesh_connections.py')
-    if os.path.exists(conn_file):
-        spec = importlib.util.spec_from_file_location('_fmc', conn_file)
-        mod  = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    return None
+def _convert_connections(connections_list):
+    return frozenset([(conn.start, conn.end) for conn in connections_list])
 
-_fmc = _load_connections()
+try:
+    from mediapipe.tasks.python.vision import face_landmarker
+    fmc = face_landmarker.FaceLandmarksConnections
 
-if _fmc:
-    FACEMESH_TESSELATION   = _fmc.FACEMESH_TESSELATION
-    FACEMESH_FACE_OVAL     = _fmc.FACEMESH_FACE_OVAL
-    FACEMESH_LEFT_EYE      = _fmc.FACEMESH_LEFT_EYE
-    FACEMESH_RIGHT_EYE     = _fmc.FACEMESH_RIGHT_EYE
-    FACEMESH_LEFT_EYEBROW  = _fmc.FACEMESH_LEFT_EYEBROW
-    FACEMESH_RIGHT_EYEBROW = _fmc.FACEMESH_RIGHT_EYEBROW
-    FACEMESH_LIPS          = _fmc.FACEMESH_LIPS
-    FACEMESH_IRISES        = getattr(_fmc, 'FACEMESH_IRISES', frozenset())
-    print("[INFO] Connection constants loaded from mediapipe package files.")
-else:
+    FACEMESH_TESSELATION   = _convert_connections(fmc.FACE_LANDMARKS_TESSELATION)
+    FACEMESH_FACE_OVAL     = _convert_connections(fmc.FACE_LANDMARKS_FACE_OVAL)
+    FACEMESH_LEFT_EYE      = _convert_connections(fmc.FACE_LANDMARKS_LEFT_EYE)
+    FACEMESH_RIGHT_EYE     = _convert_connections(fmc.FACE_LANDMARKS_RIGHT_EYE)
+    FACEMESH_LEFT_EYEBROW  = _convert_connections(fmc.FACE_LANDMARKS_LEFT_EYEBROW)
+    FACEMESH_RIGHT_EYEBROW = _convert_connections(fmc.FACE_LANDMARKS_RIGHT_EYEBROW)
+    FACEMESH_LIPS          = _convert_connections(fmc.FACE_LANDMARKS_LIPS)
+
+    # Irises are split in the modern API, combine them
+    left_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_LEFT_IRIS', []))
+    right_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_RIGHT_IRIS', []))
+    FACEMESH_IRISES = left_iris | right_iris
+
+    print("[INFO] Connection constants loaded securely from FaceLandmarksConnections.")
+except (ImportError, AttributeError):
     # Hardcoded fallback — contour skeleton, no tesselation fill
-    print("[INFO] face_mesh_connections.py not found — using hardcoded contour skeleton.")
+    print("[INFO] FaceLandmarksConnections not found — using hardcoded contour skeleton.")
     FACEMESH_TESSELATION   = frozenset()
     FACEMESH_FACE_OVAL = frozenset([
         (10,338),(338,297),(297,332),(332,284),(284,251),(251,389),(389,356),
@@ -91,6 +90,7 @@ MODEL_URL    = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
+EXPECTED_MODEL_HASH = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
 # ── COLORS (BGR) ──────────────────────────────────────────────────────────────
 C_MESH = (20,  20,  20 )
@@ -141,11 +141,38 @@ class LandmarkSmoother:
 
         return self.smoothed
 
+def check_model_hash():
+    if not os.path.exists(MODEL_PATH):
+        return False
+    sha256_hash = hashlib.sha256()
+    try:
+        with open(MODEL_PATH, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+    except OSError:
+        return False
+    return sha256_hash.hexdigest() == EXPECTED_MODEL_HASH
+
 def download_model():
+    if os.path.exists(MODEL_PATH):
+        if not check_model_hash():
+            print("[SETUP] Existing face_landmarker.task hash mismatch. Deleting and redownloading...")
+            os.remove(MODEL_PATH)
+
     if not os.path.exists(MODEL_PATH):
         print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-        print("[SETUP] Done.")
+        try:
+            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+            with open(MODEL_PATH, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash != EXPECTED_MODEL_HASH:
+                os.remove(MODEL_PATH)
+                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
+            print("[SETUP] Done. Model integrity verified.")
+        except Exception as e:
+            if os.path.exists(MODEL_PATH):
+                os.remove(MODEL_PATH)
+            raise RuntimeError(f"Failed to download or verify model: {e}")
 
 def to_pixels(landmarks, w, h):
     return [(int((1.0 - lm.x) * w), int(lm.y * h), lm.z) for lm in landmarks]
@@ -153,20 +180,17 @@ def to_pixels(landmarks, w, h):
 def z_range(pts):
     if not pts:
         return 0.0, 0.0
-    min_z = max_z = pts[0][2]
-    for pt in pts:
-        z = pt[2]
-        if z < min_z: min_z = z
-        elif z > max_z: max_z = z
-    return min_z, max_z
+    z_vals = [pt[2] for pt in pts]
+    return min(z_vals), max(z_vals)
 
 def draw_connections(canvas, pts, connections, color, thickness=1):
-    for a, b in connections:
-        if a < len(pts) and b < len(pts):
-            cv2.line(canvas,
-                     (pts[a][0], pts[a][1]),
-                     (pts[b][0], pts[b][1]),
-                     color, thickness, cv2.LINE_AA)
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
+        return
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
+    cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
     span = z_max - z_min + 1e-9
@@ -217,14 +241,8 @@ def render_result(canvas, result, smoother):
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
             zm, zx = z_range(pts)
 
-            draw_connections(canvas, pts, FACEMESH_TESSELATION,   C_MESH, 1)
-            draw_connections(canvas, pts, FACEMESH_FACE_OVAL,     C_OVAL, 2)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYE,      C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYE,     C_EYE,  1)
-            draw_connections(canvas, pts, FACEMESH_LEFT_EYEBROW,  C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_RIGHT_EYEBROW, C_BROW, 1)
-            draw_connections(canvas, pts, FACEMESH_LIPS,          C_LIPS, 1)
-            draw_connections(canvas, pts, FACEMESH_IRISES,        C_IRIS, 1)
+            for conn, color, thickness in CONNECTION_SPECS:
+                draw_connections(canvas, pts, conn, color, thickness)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
@@ -233,8 +251,8 @@ def save_landmarks(smoother, filename="face_landmarks.txt"):
     if smoother.smoothed is not None:
         with open(filename, "w") as f:
             f.write("id,x,y,z\n")
-            for i, (x, y, z) in enumerate(smoother.smoothed):
-                f.write(f"{i},{x:.6f},{y:.6f},{z:.6f}\n")
+            for i, lm in enumerate(smoother.smoothed):
+                f.write(f"{i},{lm.x:.6f},{lm.y:.6f},{lm.z:.6f}\n")
         print(f"[SAVED] {filename}")
 
 def main():
