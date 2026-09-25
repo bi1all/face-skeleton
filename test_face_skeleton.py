@@ -171,7 +171,8 @@ def test_draw_connections_polylines(mocker):
     color = (255, 255, 255)
     thickness = 2
 
-    draw_connections(mock_canvas, pts, connections, color, thickness)
+    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    draw_connections(mock_canvas, pts, connections, color, thickness, pts_arr)
 
     mock_polylines.assert_called_once()
 

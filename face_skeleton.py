@@ -186,12 +186,13 @@ def z_range(pts):
     z_vals = [pt[2] for pt in pts]
     return min(z_vals), max(z_vals)
 
-def draw_connections(canvas, pts, connections, color, thickness=1):
+def draw_connections(canvas, pts, connections, color, thickness=1, pts_arr=None):
     n = len(pts)
     valid_connections = [(a, b) for a, b in connections if a < n and b < n]
     if not valid_connections:
         return
-    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    if pts_arr is None:
+        pts_arr = np.array(pts, dtype=np.int32)[:, :2]
     segments = pts_arr[valid_connections]
     cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
@@ -244,8 +245,10 @@ def render_result(canvas, result, smoother):
             pts    = to_pixels(smoothed_face, CANVAS_W, CANVAS_H)
             zm, zx = z_range(pts)
 
+            pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+
             for conn, color, thickness in CONNECTION_SPECS:
-                draw_connections(canvas, pts, conn, color, thickness)
+                draw_connections(canvas, pts, conn, color, thickness, pts_arr)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
