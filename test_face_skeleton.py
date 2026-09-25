@@ -211,3 +211,68 @@ def test_z_range_multiple_points():
         (70, 80, 0.0)
     ]
     assert z_range(pts) == (-2.1, 8.9)
+
+
+def test_landmark_smoother_initial_update():
+    from face_skeleton import LandmarkSmoother
+    smoother = LandmarkSmoother(alpha=0.5)
+    landmarks = [
+        MockLandmark(1.0, 2.0, 3.0),
+        MockLandmark(4.0, 5.0, 6.0)
+    ]
+
+    smoothed = smoother.update(landmarks)
+
+    assert len(smoothed) == 2
+    assert smoothed[0].x == 1.0
+    assert smoothed[0].y == 2.0
+    assert smoothed[0].z == 3.0
+    assert smoothed[1].x == 4.0
+    assert smoothed[1].y == 5.0
+    assert smoothed[1].z == 6.0
+
+
+def test_landmark_smoother_subsequent_update():
+    from face_skeleton import LandmarkSmoother
+    smoother = LandmarkSmoother(alpha=0.5)
+    landmarks1 = [
+        MockLandmark(10.0, 20.0, 30.0)
+    ]
+    smoother.update(landmarks1)
+
+    landmarks2 = [
+        MockLandmark(20.0, 30.0, 40.0)
+    ]
+    smoothed = smoother.update(landmarks2)
+
+    assert len(smoothed) == 1
+    # alpha = 0.5
+    # new_val = 0.5 * lm + 0.5 * old_val
+    # new_x = 0.5 * 20.0 + 0.5 * 10.0 = 15.0
+    assert smoothed[0].x == 15.0
+    assert smoothed[0].y == 25.0
+    assert smoothed[0].z == 35.0
+
+
+def test_landmark_smoother_length_change():
+    from face_skeleton import LandmarkSmoother
+    smoother = LandmarkSmoother(alpha=0.5)
+    landmarks1 = [
+        MockLandmark(1.0, 2.0, 3.0)
+    ]
+    smoother.update(landmarks1)
+
+    landmarks2 = [
+        MockLandmark(10.0, 20.0, 30.0),
+        MockLandmark(40.0, 50.0, 60.0)
+    ]
+    # Length changed, so it should reset and copy exactly
+    smoothed = smoother.update(landmarks2)
+
+    assert len(smoothed) == 2
+    assert smoothed[0].x == 10.0
+    assert smoothed[0].y == 20.0
+    assert smoothed[0].z == 30.0
+    assert smoothed[1].x == 40.0
+    assert smoothed[1].y == 50.0
+    assert smoothed[1].z == 60.0
