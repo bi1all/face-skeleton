@@ -10,7 +10,6 @@ import urllib.request
 import os
 import hashlib
 import time
-import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # Securely load connection constants from the Mediapipe Tasks API.
@@ -142,38 +141,17 @@ class LandmarkSmoother:
 
         return self.smoothed
 
-def check_model_hash():
-    if not os.path.exists(MODEL_PATH):
-        return False
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(MODEL_PATH, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-    except OSError:
-        return False
-    return sha256_hash.hexdigest() == EXPECTED_MODEL_HASH
-
 def download_model():
-    if os.path.exists(MODEL_PATH):
-        if not check_model_hash():
-            print("[SETUP] Existing face_landmarker.task hash mismatch. Deleting and redownloading...")
-            os.remove(MODEL_PATH)
-
     if not os.path.exists(MODEL_PATH):
-        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
-        try:
-            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-            with open(MODEL_PATH, "rb") as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
-            if file_hash != EXPECTED_MODEL_HASH:
-                os.remove(MODEL_PATH)
-                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
-            print("[SETUP] Done. Model integrity verified.")
-        except Exception as e:
-            if os.path.exists(MODEL_PATH):
-                os.remove(MODEL_PATH)
-            raise RuntimeError(f"Failed to download or verify model: {e}")
+        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        print("[SETUP] Done.")
+    with open(MODEL_PATH, "rb") as f:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+
+    if file_hash != EXPECTED_MODEL_HASH:
+        os.remove(MODEL_PATH)
+        raise RuntimeError("Hash mismatch for downloaded model.")
 
 def to_pixels(landmarks, w, h):
     x_scale = w - 1 if w > 0 else w
