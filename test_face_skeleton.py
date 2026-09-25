@@ -162,16 +162,17 @@ def test_draw_connections_polylines(mocker):
 
     mock_canvas = mocker.Mock()
 
-    pts = [
-        (10, 20, 0.1),
-        (30, 40, 0.2),
-        (50, 60, 0.3)
-    ]
-    connections = [(0, 1), (1, 2), (0, 3)]
+    pts_arr = np.array([
+        [10, 20],
+        [30, 40],
+        [50, 60],
+        [70, 80]
+    ], dtype=np.int32)
+    connections = np.array([(0, 1), (1, 2), (0, 3)], dtype=np.int32)
     color = (255, 255, 255)
     thickness = 2
 
-    draw_connections(mock_canvas, pts, connections, color, thickness)
+    draw_connections(mock_canvas, pts_arr, connections, color, thickness)
 
     mock_polylines.assert_called_once()
 
@@ -182,7 +183,8 @@ def test_draw_connections_polylines(mocker):
     segments = args[1]
     expected_segments = np.array([
         [[10, 20], [30, 40]],
-        [[30, 40], [50, 60]]
+        [[30, 40], [50, 60]],
+        [[10, 20], [70, 80]]
     ], dtype=np.int32)
 
     np.testing.assert_array_equal(segments, expected_segments)
