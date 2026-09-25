@@ -249,6 +249,7 @@ def run_tracking_loop(cap, options, smoother):
             if not paused:
                 ret, frame = cap.read()
                 if not ret:
+                    time.sleep(0.01)
                     continue
 
                 result      = process_frame(landmarker, frame)
