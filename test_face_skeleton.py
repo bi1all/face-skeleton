@@ -215,6 +215,11 @@ def test_z_range_multiple_points():
     assert z_range(pts) == (-2.1, 8.9)
 
 
+def test_z_range_generator():
+    pts = ((x, x + 1, z) for x, z in enumerate([5.5, -2.1, 8.9, 0.0]))
+    assert z_range(pts) == (-2.1, 8.9)
+
+
 def test_landmark_smoother_initial_update():
     from face_skeleton import LandmarkSmoother
     smoother = LandmarkSmoother(alpha=0.5)
