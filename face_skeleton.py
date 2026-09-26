@@ -10,7 +10,6 @@ import urllib.request
 import os
 import hashlib
 import time
-import hashlib
 
 # ── LOAD CONNECTION CONSTANTS ─────────────────────────────────────────────────
 # Securely load connection constants from the Mediapipe Tasks API.
@@ -144,38 +143,17 @@ class LandmarkSmoother:
 
         return self.smoothed
 
-def check_model_hash():
-    if not os.path.exists(MODEL_PATH):
-        return False
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(MODEL_PATH, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-    except OSError:
-        return False
-    return sha256_hash.hexdigest() == EXPECTED_MODEL_HASH
-
 def download_model():
-    if os.path.exists(MODEL_PATH):
-        if not check_model_hash():
-            print("[SETUP] Existing face_landmarker.task hash mismatch. Deleting and redownloading...")
-            os.remove(MODEL_PATH)
-
     if not os.path.exists(MODEL_PATH):
-        print(f"[SETUP] Downloading {MODEL_PATH} (~30 MB) — one time only...")
-        try:
-            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-            with open(MODEL_PATH, "rb") as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
-            if file_hash != EXPECTED_MODEL_HASH:
-                os.remove(MODEL_PATH)
-                raise RuntimeError(f"Hash mismatch for downloaded model. Expected {EXPECTED_MODEL_HASH}, got {file_hash}")
-            print("[SETUP] Done. Model integrity verified.")
-        except Exception as e:
-            if os.path.exists(MODEL_PATH):
-                os.remove(MODEL_PATH)
-            raise RuntimeError(f"Failed to download or verify model: {e}")
+        print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        print("[SETUP] Done.")
+    with open(MODEL_PATH, "rb") as f:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+
+    if file_hash != EXPECTED_MODEL_HASH:
+        os.remove(MODEL_PATH)
+        raise RuntimeError("Hash mismatch for downloaded model.")
 
 def to_pixels(landmarks, w, h):
     x_scale = w - 1 if w > 0 else w
@@ -185,13 +163,16 @@ def to_pixels(landmarks, w, h):
 def z_range(pts):
     if not pts:
         return 0.0, 0.0
-    z_vals = [pt[2] for pt in pts]
-    return min(z_vals), max(z_vals)
+    return min(pt[2] for pt in pts), max(pt[2] for pt in pts)
 
-def draw_connections(canvas, pts_arr, connections, color, thickness=1):
-    if len(connections) == 0:
+def draw_connections(canvas, pts, connections, color, thickness=1, pts_arr=None):
+    n = len(pts)
+    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    if not valid_connections:
         return
-    segments = pts_arr[connections]
+    if pts_arr is None:
+        pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+    segments = pts_arr[valid_connections]
     cv2.polylines(canvas, segments, False, color, thickness, cv2.LINE_AA)
 
 def draw_dots(canvas, pts, z_min, z_max):
@@ -244,8 +225,9 @@ def render_result(canvas, result, smoother):
             zm, zx = z_range(pts)
 
             pts_arr = np.array(pts, dtype=np.int32)[:, :2]
+
             for conn, color, thickness in CONNECTION_SPECS:
-                draw_connections(canvas, pts_arr, conn, color, thickness)
+                draw_connections(canvas, pts, conn, color, thickness, pts_arr)
             draw_dots(canvas, pts, zm, zx)
     else:
         smoother.smoothed = None
@@ -269,6 +251,7 @@ def run_tracking_loop(cap, options, smoother):
             if not paused:
                 ret, frame = cap.read()
                 if not ret:
+                    time.sleep(0.01)
                     continue
 
                 result      = process_frame(landmarker, frame)
