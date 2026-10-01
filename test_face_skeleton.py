@@ -157,6 +157,17 @@ def test_download_model_success(mocker):
     m_open.assert_called_once_with(model_path, "rb")
 
 
+def test_download_model_invalid_scheme(mocker):
+    download_model = face_skeleton.download_model
+    mocker.patch("face_skeleton.MODEL_URL", "http://storage.googleapis.com/mediapipe-models/face_landmarker.task")
+    with pytest.raises(ValueError, match="Insecure model download URL. Scheme must be https."):
+        download_model()
+
+    mocker.patch("face_skeleton.MODEL_URL", "ftp://storage.googleapis.com/mediapipe-models/face_landmarker.task")
+    with pytest.raises(ValueError, match="Insecure model download URL. Scheme must be https."):
+        download_model()
+
+
 def test_download_model_hash_mismatch(mocker):
     import urllib.request
     download_model = face_skeleton.download_model
