@@ -13,6 +13,8 @@ def _install_test_stubs():
         cv2_stub = types.ModuleType("cv2")
         cv2_stub.LINE_AA = 16
         cv2_stub.polylines = lambda *args, **kwargs: None
+        cv2_stub.VideoCapture = lambda *args, **kwargs: None
+        cv2_stub.CAP_PROP_FPS = 5
         sys.modules["cv2"] = cv2_stub
 
     if "mediapipe" not in sys.modules:
@@ -105,6 +107,32 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+
+def test_init_camera_success(mocker):
+    mock_cap = mocker.Mock()
+    mock_cap.isOpened.return_value = True
+    mocker.patch('cv2.VideoCapture', return_value=mock_cap)
+
+    cap = face_skeleton.init_camera(0, fps=30)
+
+    assert cap == mock_cap
+    cv2.VideoCapture.assert_called_once_with(0)
+    mock_cap.isOpened.assert_called_once()
+    mock_cap.set.assert_called_once_with(cv2.CAP_PROP_FPS, 30)
+
+
+def test_init_camera_failure(mocker):
+    mock_cap = mocker.Mock()
+    mock_cap.isOpened.return_value = False
+    mocker.patch('cv2.VideoCapture', return_value=mock_cap)
+
+    cap = face_skeleton.init_camera(1, fps=60)
+
+    assert cap is None
+    cv2.VideoCapture.assert_called_once_with(1)
+    mock_cap.isOpened.assert_called_once()
+    mock_cap.set.assert_not_called()
 
 
 def test_download_model_success(mocker):
