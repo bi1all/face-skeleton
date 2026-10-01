@@ -33,7 +33,13 @@ try:
     # Irises are split in the modern API, combine them
     left_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_LEFT_IRIS', []))
     right_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_RIGHT_IRIS', []))
-    FACEMESH_IRISES = np.vstack((left_iris, right_iris)) if left_iris.size and right_iris.size else left_iris if left_iris.size else right_iris
+
+    if left_iris.size and right_iris.size:
+        FACEMESH_IRISES = np.vstack((left_iris, right_iris))
+    elif left_iris.size:
+        FACEMESH_IRISES = left_iris
+    else:
+        FACEMESH_IRISES = right_iris
 
     print("[INFO] Connection constants loaded securely from FaceLandmarksConnections.")
 except (ImportError, AttributeError):
