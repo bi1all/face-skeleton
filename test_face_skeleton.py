@@ -107,7 +107,6 @@ def test_to_pixels_type_casting():
     assert isinstance(res[0][1], int)
 
 
-@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_success(mocker):
     import urllib.request
     download_model = face_skeleton.download_model
@@ -130,7 +129,6 @@ def test_download_model_success(mocker):
     m_open.assert_called_once_with(model_path, "rb")
 
 
-@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_hash_mismatch(mocker):
     import urllib.request
     download_model = face_skeleton.download_model
