@@ -116,12 +116,13 @@ def test_to_pixels_type_casting():
 
 @pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_success(mocker):
+    import urllib.request
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
     model_url = face_skeleton.MODEL_URL
 
     m_exists = mocker.patch("face_skeleton.os.path.exists", return_value=False)
-    m_urlretrieve = mocker.patch("face_skeleton.urllib.request.urlretrieve")
+    m_urlretrieve = mocker.patch("urllib.request.urlretrieve")
 
     mock_file_content = b"fake_model_data"
     mock_hash = hashlib.sha256(mock_file_content).hexdigest()
@@ -138,11 +139,12 @@ def test_download_model_success(mocker):
 
 @pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_hash_mismatch(mocker):
+    import urllib.request
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
 
     mocker.patch("face_skeleton.os.path.exists", return_value=False)
-    mocker.patch("face_skeleton.urllib.request.urlretrieve")
+    mocker.patch("urllib.request.urlretrieve")
 
     mock_file_content = b"corrupted_model_data"
     m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
@@ -162,6 +164,12 @@ def test_draw_connections_polylines(mocker):
 
     mock_canvas = mocker.Mock()
 
+    pts = [
+        (10, 20, 1),
+        (30, 40, 2),
+        (50, 60, 3),
+        (70, 80, 4)
+    ]
     pts_arr = np.array([
         [10, 20],
         [30, 40],
@@ -172,7 +180,6 @@ def test_draw_connections_polylines(mocker):
     color = (255, 255, 255)
     thickness = 2
 
-    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
     draw_connections(mock_canvas, pts, connections, color, thickness, pts_arr)
 
     mock_polylines.assert_called_once()
