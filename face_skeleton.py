@@ -175,9 +175,16 @@ def z_range(pts):
             z_max = z
     return z_min, z_max
 
+_VALID_CONNECTIONS_CACHE = {}
+
 def draw_connections(canvas, pts, connections, color, thickness=1, pts_arr=None):
     n = len(pts)
-    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    cache_key = (id(connections), n)
+    if cache_key not in _VALID_CONNECTIONS_CACHE:
+        valid_list = [(a, b) for a, b in connections if a < n and b < n]
+        _VALID_CONNECTIONS_CACHE[cache_key] = valid_list
+
+    valid_connections = _VALID_CONNECTIONS_CACHE[cache_key]
     if not valid_connections:
         return
     if pts_arr is None:
