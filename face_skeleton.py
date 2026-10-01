@@ -6,7 +6,6 @@ mediapipe 0.10.35 Tasks API | Python 3.12 | RGB camera 0
 import cv2
 import numpy as np
 import mediapipe as mp
-import urllib.request
 import os
 import hashlib
 import time
@@ -146,6 +145,7 @@ class LandmarkSmoother:
 def download_model():
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
+        import urllib.request
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
         print("[SETUP] Done.")
     with open(MODEL_PATH, "rb") as f:

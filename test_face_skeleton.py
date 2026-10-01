@@ -33,21 +33,14 @@ _install_test_stubs()
 
 import cv2
 import face_skeleton
-from face_skeleton import to_pixels, z_range
-
-
-class MockLandmark:
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
+from face_skeleton import to_pixels, z_range, SmoothedLandmark
 
 
 def test_to_pixels_happy_path():
     landmarks = [
-        MockLandmark(0.0, 0.0, 0.0),
-        MockLandmark(0.5, 0.5, 0.5),
-        MockLandmark(1.0, 1.0, 1.0)
+        SmoothedLandmark(0.0, 0.0, 0.0),
+        SmoothedLandmark(0.5, 0.5, 0.5),
+        SmoothedLandmark(1.0, 1.0, 1.0)
     ]
     w, h = 100, 200
     expected = [
@@ -64,7 +57,7 @@ def test_to_pixels_empty_landmarks():
 
 def test_to_pixels_zero_dimensions():
     landmarks = [
-        MockLandmark(0.5, 0.5, 0.5)
+        SmoothedLandmark(0.5, 0.5, 0.5)
     ]
     w, h = 0, 0
     expected = [
@@ -75,7 +68,7 @@ def test_to_pixels_zero_dimensions():
 
 def test_to_pixels_negative_dimensions():
     landmarks = [
-        MockLandmark(0.5, 0.5, 0.5)
+        SmoothedLandmark(0.5, 0.5, 0.5)
     ]
     w, h = -100, -200
     expected = [
@@ -86,7 +79,7 @@ def test_to_pixels_negative_dimensions():
 
 def test_to_pixels_negative_coordinates():
     landmarks = [
-        MockLandmark(-0.5, -0.5, -0.5)
+        SmoothedLandmark(-0.5, -0.5, -0.5)
     ]
     w, h = 100, 200
     expected = [
@@ -97,7 +90,7 @@ def test_to_pixels_negative_coordinates():
 
 def test_to_pixels_type_casting():
     landmarks = [
-        MockLandmark(0.123, 0.456, 0.789)
+        SmoothedLandmark(0.123, 0.456, 0.789)
     ]
     w, h = 100, 200
 
@@ -115,12 +108,13 @@ def test_to_pixels_type_casting():
 
 
 def test_download_model_success(mocker):
+    import urllib.request
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
     model_url = face_skeleton.MODEL_URL
 
     m_exists = mocker.patch("face_skeleton.os.path.exists", return_value=False)
-    m_urlretrieve = mocker.patch("face_skeleton.urllib.request.urlretrieve")
+    m_urlretrieve = mocker.patch("urllib.request.urlretrieve")
 
     mock_file_content = b"fake_model_data"
     mock_hash = hashlib.sha256(mock_file_content).hexdigest()
@@ -136,11 +130,12 @@ def test_download_model_success(mocker):
 
 
 def test_download_model_hash_mismatch(mocker):
+    import urllib.request
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
 
     mocker.patch("face_skeleton.os.path.exists", return_value=False)
-    mocker.patch("face_skeleton.urllib.request.urlretrieve")
+    mocker.patch("urllib.request.urlretrieve")
 
     mock_file_content = b"corrupted_model_data"
     m_open = mocker.patch("builtins.open", mock_open(read_data=mock_file_content))
@@ -161,12 +156,17 @@ def test_draw_connections_polylines(mocker):
     mock_canvas = mocker.Mock()
 
     pts = [
-        (10, 20),
-        (30, 40),
-        (50, 60),
-        (70, 80)
+        (10, 20, 0),
+        (30, 40, 0),
+        (50, 60, 0),
+        (70, 80, 0)
     ]
-    pts_arr = np.array(pts, dtype=np.int32)
+    pts_arr = np.array([
+        [10, 20],
+        [30, 40],
+        [50, 60],
+        [70, 80]
+    ], dtype=np.int32)
     connections = np.array([(0, 1), (1, 2), (0, 3)], dtype=np.int32)
     color = (255, 255, 255)
     thickness = 2
@@ -222,8 +222,8 @@ def test_landmark_smoother_initial_update():
     from face_skeleton import LandmarkSmoother
     smoother = LandmarkSmoother(alpha=0.5)
     landmarks = [
-        MockLandmark(1.0, 2.0, 3.0),
-        MockLandmark(4.0, 5.0, 6.0)
+        SmoothedLandmark(1.0, 2.0, 3.0),
+        SmoothedLandmark(4.0, 5.0, 6.0)
     ]
 
     smoothed = smoother.update(landmarks)
@@ -241,12 +241,12 @@ def test_landmark_smoother_subsequent_update():
     from face_skeleton import LandmarkSmoother
     smoother = LandmarkSmoother(alpha=0.5)
     landmarks1 = [
-        MockLandmark(10.0, 20.0, 30.0)
+        SmoothedLandmark(10.0, 20.0, 30.0)
     ]
     smoother.update(landmarks1)
 
     landmarks2 = [
-        MockLandmark(20.0, 30.0, 40.0)
+        SmoothedLandmark(20.0, 30.0, 40.0)
     ]
     smoothed = smoother.update(landmarks2)
 
@@ -263,13 +263,13 @@ def test_landmark_smoother_length_change():
     from face_skeleton import LandmarkSmoother
     smoother = LandmarkSmoother(alpha=0.5)
     landmarks1 = [
-        MockLandmark(1.0, 2.0, 3.0)
+        SmoothedLandmark(1.0, 2.0, 3.0)
     ]
     smoother.update(landmarks1)
 
     landmarks2 = [
-        MockLandmark(10.0, 20.0, 30.0),
-        MockLandmark(40.0, 50.0, 60.0)
+        SmoothedLandmark(10.0, 20.0, 30.0),
+        SmoothedLandmark(40.0, 50.0, 60.0)
     ]
     # Length changed, so it should reset and copy exactly
     smoothed = smoother.update(landmarks2)
