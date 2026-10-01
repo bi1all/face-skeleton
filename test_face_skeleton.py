@@ -114,7 +114,6 @@ def test_to_pixels_type_casting():
     assert isinstance(res[0][1], int)
 
 
-@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_success(mocker):
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
@@ -136,7 +135,6 @@ def test_download_model_success(mocker):
     m_open.assert_called_once_with(model_path, "rb")
 
 
-@pytest.mark.skipif(not hasattr(face_skeleton, "EXPECTED_MODEL_HASH"), reason="model integrity verification is not implemented in this branch")
 def test_download_model_hash_mismatch(mocker):
     download_model = face_skeleton.download_model
     model_path = face_skeleton.MODEL_PATH
@@ -162,17 +160,17 @@ def test_draw_connections_polylines(mocker):
 
     mock_canvas = mocker.Mock()
 
-    pts_arr = np.array([
-        [10, 20],
-        [30, 40],
-        [50, 60],
-        [70, 80]
-    ], dtype=np.int32)
+    pts = [
+        (10, 20),
+        (30, 40),
+        (50, 60),
+        (70, 80)
+    ]
+    pts_arr = np.array(pts, dtype=np.int32)
     connections = np.array([(0, 1), (1, 2), (0, 3)], dtype=np.int32)
     color = (255, 255, 255)
     thickness = 2
 
-    pts_arr = np.array(pts, dtype=np.int32)[:, :2]
     draw_connections(mock_canvas, pts, connections, color, thickness, pts_arr)
 
     mock_polylines.assert_called_once()
