@@ -281,3 +281,30 @@ def test_landmark_smoother_length_change():
     assert smoothed[1].x == 40.0
     assert smoothed[1].y == 50.0
     assert smoothed[1].z == 60.0
+
+def test__convert_connections_empty():
+    from face_skeleton import _convert_connections
+    res = _convert_connections([])
+    assert isinstance(res, np.ndarray)
+    assert res.shape == (0, 2)
+    assert res.dtype == np.int32
+
+
+def test__convert_connections_valid():
+    from face_skeleton import _convert_connections
+    class MockConnection:
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+
+    connections = [
+        MockConnection(0, 1),
+        MockConnection(1, 2),
+        MockConnection(2, 3)
+    ]
+
+    res = _convert_connections(connections)
+    assert isinstance(res, np.ndarray)
+    assert res.shape == (3, 2)
+    assert res.dtype == np.int32
+    np.testing.assert_array_equal(res, np.array([[0, 1], [1, 2], [2, 3]], dtype=np.int32))
