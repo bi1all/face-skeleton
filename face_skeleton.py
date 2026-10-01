@@ -162,9 +162,17 @@ def download_model():
         raise RuntimeError("Hash mismatch for downloaded model.")
 
 def to_pixels(landmarks, w, h):
+    if not landmarks:
+        return []
+
     x_scale = w - 1 if w > 0 else w
     y_scale = h - 1 if h > 0 else h
-    return [(int((1.0 - lm.x) * x_scale), int(lm.y * y_scale), lm.z) for lm in landmarks]
+
+    arr = np.array([(lm.x, lm.y, lm.z) for lm in landmarks])
+    xs = ((1.0 - arr[:, 0]) * x_scale).astype(np.int32).tolist()
+    ys = (arr[:, 1] * y_scale).astype(np.int32).tolist()
+
+    return list(zip(xs, ys, arr[:, 2].tolist()))
 
 def z_range(pts):
     iterator = iter(pts)
