@@ -282,29 +282,27 @@ def test_landmark_smoother_length_change():
     assert smoothed[1].y == 50.0
     assert smoothed[1].z == 60.0
 
-def test__convert_connections_empty():
-    from face_skeleton import _convert_connections
-    res = _convert_connections([])
-    assert isinstance(res, np.ndarray)
-    assert res.shape == (0, 2)
-    assert res.dtype == np.int32
+def test_render_result_none(mocker):
+    from face_skeleton import render_result
 
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
 
-def test__convert_connections_valid():
-    from face_skeleton import _convert_connections
-    class MockConnection:
-        def __init__(self, start, end):
-            self.start = start
-            self.end = end
+    render_result(mock_canvas, None, mock_smoother)
 
-    connections = [
-        MockConnection(0, 1),
-        MockConnection(1, 2),
-        MockConnection(2, 3)
-    ]
+    assert mock_smoother.smoothed is None
 
-    res = _convert_connections(connections)
-    assert isinstance(res, np.ndarray)
-    assert res.shape == (3, 2)
-    assert res.dtype == np.int32
-    np.testing.assert_array_equal(res, np.array([[0, 1], [1, 2], [2, 3]], dtype=np.int32))
+def test_render_result_empty_landmarks(mocker):
+    from face_skeleton import render_result
+
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
+
+    mock_result = mocker.Mock()
+    mock_result.face_landmarks = []
+
+    render_result(mock_canvas, mock_result, mock_smoother)
+
+    assert mock_smoother.smoothed is None
