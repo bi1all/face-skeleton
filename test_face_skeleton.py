@@ -281,3 +281,28 @@ def test_landmark_smoother_length_change():
     assert smoothed[1].x == 40.0
     assert smoothed[1].y == 50.0
     assert smoothed[1].z == 60.0
+
+def test_render_result_none(mocker):
+    from face_skeleton import render_result
+
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
+
+    render_result(mock_canvas, None, mock_smoother)
+
+    assert mock_smoother.smoothed is None
+
+def test_render_result_empty_landmarks(mocker):
+    from face_skeleton import render_result
+
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
+
+    mock_result = mocker.Mock()
+    mock_result.face_landmarks = []
+
+    render_result(mock_canvas, mock_result, mock_smoother)
+
+    assert mock_smoother.smoothed is None
