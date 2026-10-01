@@ -33,7 +33,13 @@ try:
     # Irises are split in the modern API, combine them
     left_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_LEFT_IRIS', []))
     right_iris = _convert_connections(getattr(fmc, 'FACE_LANDMARKS_RIGHT_IRIS', []))
-    FACEMESH_IRISES = np.vstack((left_iris, right_iris)) if left_iris.size and right_iris.size else left_iris if left_iris.size else right_iris
+
+    if left_iris.size and right_iris.size:
+        FACEMESH_IRISES = np.vstack((left_iris, right_iris))
+    elif left_iris.size:
+        FACEMESH_IRISES = left_iris
+    else:
+        FACEMESH_IRISES = right_iris
 
     print("[INFO] Connection constants loaded securely from FaceLandmarksConnections.")
 except (ImportError, AttributeError):
@@ -175,9 +181,16 @@ def z_range(pts):
             z_max = z
     return z_min, z_max
 
+_VALID_CONNECTIONS_CACHE = {}
+
 def draw_connections(canvas, pts, connections, color, thickness=1, pts_arr=None):
     n = len(pts)
-    valid_connections = [(a, b) for a, b in connections if a < n and b < n]
+    cache_key = (id(connections), n)
+    if cache_key not in _VALID_CONNECTIONS_CACHE:
+        valid_list = [(a, b) for a, b in connections if a < n and b < n]
+        _VALID_CONNECTIONS_CACHE[cache_key] = valid_list
+
+    valid_connections = _VALID_CONNECTIONS_CACHE[cache_key]
     if not valid_connections:
         return
     if pts_arr is None:

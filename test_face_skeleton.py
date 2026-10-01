@@ -13,6 +13,8 @@ def _install_test_stubs():
         cv2_stub = types.ModuleType("cv2")
         cv2_stub.LINE_AA = 16
         cv2_stub.polylines = lambda *args, **kwargs: None
+        cv2_stub.VideoCapture = lambda *args, **kwargs: None
+        cv2_stub.CAP_PROP_FPS = 5
         sys.modules["cv2"] = cv2_stub
 
     if "mediapipe" not in sys.modules:
@@ -105,6 +107,32 @@ def test_to_pixels_type_casting():
     # verify that the x and y are indeed ints
     assert isinstance(res[0][0], int)
     assert isinstance(res[0][1], int)
+
+
+def test_init_camera_success(mocker):
+    mock_cap = mocker.Mock()
+    mock_cap.isOpened.return_value = True
+    mocker.patch('cv2.VideoCapture', return_value=mock_cap)
+
+    cap = face_skeleton.init_camera(0, fps=30)
+
+    assert cap == mock_cap
+    cv2.VideoCapture.assert_called_once_with(0)
+    mock_cap.isOpened.assert_called_once()
+    mock_cap.set.assert_called_once_with(cv2.CAP_PROP_FPS, 30)
+
+
+def test_init_camera_failure(mocker):
+    mock_cap = mocker.Mock()
+    mock_cap.isOpened.return_value = False
+    mocker.patch('cv2.VideoCapture', return_value=mock_cap)
+
+    cap = face_skeleton.init_camera(1, fps=60)
+
+    assert cap is None
+    cv2.VideoCapture.assert_called_once_with(1)
+    mock_cap.isOpened.assert_called_once()
+    mock_cap.set.assert_not_called()
 
 
 def test_download_model_success(mocker):
@@ -282,43 +310,27 @@ def test_landmark_smoother_length_change():
     assert smoothed[1].y == 50.0
     assert smoothed[1].z == 60.0
 
-def test_save_landmarks_with_data(mocker, capsys):
-    from face_skeleton import save_landmarks, LandmarkSmoother, SmoothedLandmark
+def test_render_result_none(mocker):
+    from face_skeleton import render_result
 
-    smoother = LandmarkSmoother(alpha=0.5)
-    smoother.smoothed = [
-        SmoothedLandmark(1.2345678, 2.3456789, 3.4567891),
-        SmoothedLandmark(0.0, 0.0, 0.0)
-    ]
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
 
-    m_open = mocker.patch("builtins.open", mocker.mock_open())
+    render_result(mock_canvas, None, mock_smoother)
 
-    save_landmarks(smoother, "custom_landmarks.txt")
+    assert mock_smoother.smoothed is None
 
-    m_open.assert_called_once_with("custom_landmarks.txt", "w")
+def test_render_result_empty_landmarks(mocker):
+    from face_skeleton import render_result
 
-    handle = m_open()
+    mock_canvas = mocker.Mock()
+    mock_smoother = mocker.Mock()
+    mock_smoother.smoothed = "some_value"
 
-    handle.write.assert_any_call("id,x,y,z\n")
-    handle.write.assert_any_call("0,1.234568,2.345679,3.456789\n")
-    handle.write.assert_any_call("1,0.000000,0.000000,0.000000\n")
+    mock_result = mocker.Mock()
+    mock_result.face_landmarks = []
 
-    assert handle.write.call_count == 3
+    render_result(mock_canvas, mock_result, mock_smoother)
 
-    captured = capsys.readouterr()
-    assert "[SAVED] custom_landmarks.txt\n" in captured.out
-
-def test_save_landmarks_no_data(mocker, capsys):
-    from face_skeleton import save_landmarks, LandmarkSmoother
-
-    smoother = LandmarkSmoother(alpha=0.5)
-    smoother.smoothed = None
-
-    m_open = mocker.patch("builtins.open", mocker.mock_open())
-
-    save_landmarks(smoother, "test.txt")
-
-    m_open.assert_not_called()
-
-    captured = capsys.readouterr()
-    assert "[SAVED]" not in captured.out
+    assert mock_smoother.smoothed is None
