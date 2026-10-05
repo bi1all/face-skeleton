@@ -135,16 +135,15 @@ class LandmarkSmoother:
         self.smoothed = None
 
     def update(self, landmarks):
+        # Converting the landmarks to a NumPy array
+        current = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float64)
+
         if self.smoothed is None or len(self.smoothed) != len(landmarks):
-            self.smoothed = [SmoothedLandmark(lm.x, lm.y, lm.z) for lm in landmarks]
+            self.smoothed = np.rec.fromarrays(current.T, names='x,y,z')
         else:
-            alpha = self.alpha
-            inv_alpha = 1.0 - alpha
-            for i, lm in enumerate(landmarks):
-                s = self.smoothed[i]
-                s.x = alpha * lm.x + inv_alpha * s.x
-                s.y = alpha * lm.y + inv_alpha * s.y
-                s.z = alpha * lm.z + inv_alpha * s.z
+            # applying the exponential moving average in a single vectorized operation
+            state = self.smoothed.view(np.float64).reshape(-1, 3)
+            state[:] = self.alpha * current + (1.0 - self.alpha) * state
 
         return self.smoothed
 
