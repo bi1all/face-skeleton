@@ -149,6 +149,8 @@ class LandmarkSmoother:
         return self.smoothed
 
 def download_model():
+    if not MODEL_URL.startswith("https://"):
+        raise ValueError("Insecure model download URL. Scheme must be https.")
     if not os.path.exists(MODEL_PATH):
         print("[SETUP] Downloading face_landmarker.task (~30 MB) — one time only...")
         import urllib.request
